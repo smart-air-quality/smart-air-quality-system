@@ -47,8 +47,15 @@ pip install -r requirements.txt
 ```
 
 ### 3. Configure environment
+#### macOS / Linux:
 ```bash
 cp .env.example .env
+# Edit .env – set WAQI_TOKEN and OWM_API_KEY (use "demo" if you don't have keys yet)
+```
+
+#### Windows:
+```bash
+copy .env.example .env 
 # Edit .env – set WAQI_TOKEN and OWM_API_KEY (use "demo" if you don't have keys yet)
 ```
 
