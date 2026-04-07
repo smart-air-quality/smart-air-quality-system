@@ -17,15 +17,15 @@ import json
 import threading
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import paho.mqtt.client as mqtt
+
+from app.readings_store import get_history as _db_get_history
+from app.readings_store import insert_reading
 
 BROKER   = "broker.hivemq.com"
 PORT     = 1883
 TOPIC    = "air_quality/sensors"
-
-DATA_FILE = Path("data/sensor_readings.jsonl")
 
 # ข้อมูลล่าสุดที่รับจาก KidBright (shared state)
 _latest: dict | None = None
@@ -39,11 +39,7 @@ def get_latest() -> dict | None:
 
 
 def get_history(limit: int = 200) -> list[dict]:
-    if not DATA_FILE.exists():
-        return []
-    lines = DATA_FILE.read_text().strip().splitlines()
-    records = [json.loads(l) for l in lines if l.strip()]
-    return records[-limit:]
+    return _db_get_history(limit)
 
 
 def _on_connect(client, userdata, flags, reason_code, properties=None):
@@ -81,9 +77,7 @@ def _on_message(client, userdata, msg):
             },
         }
 
-        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with DATA_FILE.open("a") as f:
-            f.write(json.dumps(record) + "\n")
+        insert_reading(record)
 
         with _lock:
             _latest = record

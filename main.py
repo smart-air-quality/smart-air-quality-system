@@ -18,7 +18,10 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.database import init_db
     from app.mqtt_client import start
+
+    init_db()
     start(background=True)
     yield
 

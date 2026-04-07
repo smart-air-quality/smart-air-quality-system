@@ -95,6 +95,41 @@ Swagger UI: **http://localhost:8000/docs**
 | `LOCATION_CITY` | `Bangkok` | City used for external data queries |
 | `HOST` | `0.0.0.0` | Server host |
 | `PORT` | `8000` | Server port |
+| `DATABASE_URL` | MySQL URL below | SQLAlchemy database URL (optional if `MYSQL_*` set) |
+| `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE` | — | Build URL safely when user/password contain `@` |
+
+## Data storage
+
+Readings are stored in **MySQL** by default via SQLAlchemy + **PyMySQL** (`sensor_readings` table). Tables are created on startup (`init_db()`).
+
+**1. Create database (MySQL client or GUI):**
+```sql
+CREATE DATABASE smart_air_quality CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+**2. Configure `.env`** (same MySQL server as **phpMyAdmin** on `iot.cpe.ku.ac.th`; port is usually **3306**).
+
+Prefer **split variables** if your username looks like an email (`…@ku.th`) or your password contains `@` — a single `DATABASE_URL` treats `@` as the separator before the hostname, which leads to errors such as connecting to host `ku.th@iot.cpe.ku.ac.th`:
+
+```
+MYSQL_USER=…
+MYSQL_PASSWORD=…
+MYSQL_HOST=iot.cpe.ku.ac.th
+MYSQL_PORT=3306
+MYSQL_DATABASE=…
+```
+
+If user and password have no special characters, you can use one line instead (encode `@`, `#`, `/`, spaces if needed):
+
+```
+DATABASE_URL=mysql+pymysql://USER:PASSWORD@iot.cpe.ku.ac.th:3306/DATABASE_NAME
+```
+
+Off-campus you may need **VPN** or MySQL allowed for your IP—ask the server admin if connection is refused.
+
+**3. Default in code** (no `.env`): local MySQL `root` with empty password on `127.0.0.1`.
+
+**SQLite (optional):** do **not** set `MYSQL_HOST` / `MYSQL_DATABASE`; set `DATABASE_URL=sqlite:///./data/app.db` only.
 
 ## MQTT Configuration
 
@@ -133,6 +168,9 @@ smart-air-quality-backend/
 ├── .env.example
 └── app/
     ├── config.py            # Settings (loaded from .env)
+    ├── database.py          # SQLAlchemy engine + init_db
+    ├── models.py            # ORM models (SensorReading)
+    ├── readings_store.py    # Insert / query readings
     ├── mqtt_client.py       # MQTT subscriber
     ├── analysis/
     │   ├── aqi.py           # AQI calculation (US EPA standard)
