@@ -1,5 +1,10 @@
 venv/
+backend/venv/
 __pycache__/
+**/__pycache__/
 *.pyc
 .env
+backend/.env
 data/
+backend/data/
+backend/plans
