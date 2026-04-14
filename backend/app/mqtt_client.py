@@ -1,36 +1,34 @@
 """
-MQTT Subscriber
-รับข้อมูล sensor จาก KidBright32 แล้วเก็บเป็น latest reading
+MQTT Subscriber — KidBright32 → normalized record → DB + in-memory latest.
 
-MQTT Topic:  air_quality/sensors
-Broker:      broker.hivemq.com:1883
-Payload:
-{
-  "device": "kidbright32",
-  "climate":            { "temperature_c": float, "humidity_pct": float },
-  "gas":                { "co_ppm": float, "raw_adc": int },
-  "particulate_matter": { "pm1_0_ugm3": float, "pm2_5_ugm3": float, "pm10_ugm3": float }
-}
+Topic: air_quality/sensors (broker.hivemq.com:1883)
 """
 
 import json
+import logging
 import threading
 import uuid
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
+from pydantic import ValidationError
 
+from app.mqtt_deadletter import log_rejected
 from app.readings_store import get_history as _db_get_history
 from app.readings_store import insert_reading
+from app.schemas.ingest import validate_mqtt_payload
 
-BROKER   = "broker.hivemq.com"
-PORT     = 1883
-TOPIC    = "air_quality/sensors"
+logger = logging.getLogger(__name__)
 
-# ข้อมูลล่าสุดที่รับจาก KidBright (shared state)
+BROKER = "broker.hivemq.com"
+PORT = 1883
+TOPIC = "air_quality/sensors"
+
 _latest: dict | None = None
 _lock = threading.Lock()
 _started = False
+_client: mqtt.Client | None = None
+_mqtt_connected = False
 
 
 def get_latest() -> dict | None:
@@ -42,57 +40,26 @@ def get_history(limit: int = 200) -> list[dict]:
     return _db_get_history(limit)
 
 
+def is_mqtt_connected() -> bool:
+    return _mqtt_connected
+
+
 def _on_connect(client, userdata, flags, reason_code, properties=None):
+    global _mqtt_connected
     if reason_code == 0 or str(reason_code) == "Success":
-        print(f"[MQTT] Connected → {BROKER}")
+        _mqtt_connected = True
+        logger.info("MQTT connected to %s", BROKER)
         client.subscribe(TOPIC)
-        print(f"[MQTT] Subscribed to: {TOPIC}")
+        logger.info("MQTT subscribed: %s", TOPIC)
     else:
-        print(f"[MQTT] Connection failed: {reason_code}")
+        _mqtt_connected = False
+        logger.error("MQTT connection failed: %s", reason_code)
 
 
-def _on_message(client, userdata, msg):
-    global _latest
-    try:
-        payload = json.loads(msg.payload.decode())
-        now = datetime.now(timezone.utc).isoformat()
-
-        record = {
-            "timestamp": now,
-            "source":    "hardware",
-            "device":    payload.get("device", "kidbright32"),
-            "particulate_matter": {
-                "pm1_0_ugm3": payload.get("particulate_matter", {}).get("pm1_0_ugm3"),
-                "pm2_5_ugm3": payload.get("particulate_matter", {}).get("pm2_5_ugm3"),
-                "pm10_ugm3":  payload.get("particulate_matter", {}).get("pm10_ugm3"),
-            },
-            "climate": {
-                "temperature_c": payload.get("climate", {}).get("temperature_c"),
-                "humidity_pct":  payload.get("climate", {}).get("humidity_pct"),
-            },
-            "gas": {
-                "co_ppm":    payload.get("gas", {}).get("co_ppm"),
-                "raw_adc":   payload.get("gas", {}).get("raw_adc"),
-                "co_status": _co_status(payload.get("gas", {}).get("co_ppm") or 0),
-            },
-        }
-
-        insert_reading(record)
-
-        with _lock:
-            _latest = record
-
-        pm  = record["particulate_matter"]
-        cli = record["climate"]
-        gas = record["gas"]
-        print(
-            f"[MQTT] ← PM2.5={pm['pm2_5_ugm3']} | "
-            f"Temp={cli['temperature_c']}°C | "
-            f"Hum={cli['humidity_pct']}% | "
-            f"CO={gas['co_ppm']} ppm"
-        )
-    except Exception as e:
-        print(f"[MQTT] Parse error: {e}")
+def _on_disconnect(client, userdata, reason_code, properties=None):
+    global _mqtt_connected
+    _mqtt_connected = False
+    logger.warning("MQTT disconnected: %s", reason_code)
 
 
 def _co_status(ppm: float) -> str:
@@ -103,24 +70,85 @@ def _co_status(ppm: float) -> str:
     return "danger"
 
 
+def _on_message(client, userdata, msg):
+    global _latest
+    raw = msg.payload
+    try:
+        data = json.loads(raw.decode())
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        log_rejected("json_decode", raw, str(e))
+        return
+
+    try:
+        v = validate_mqtt_payload(data)
+    except ValidationError as e:
+        log_rejected("validation", raw, str(e.errors()))
+        return
+
+    d = v.model_dump()
+    now = datetime.now(timezone.utc).isoformat()
+    pm = d["particulate_matter"]
+    cli = d["climate"]
+    gas = d["gas"]
+    co_ppm = gas.get("co_ppm") or 0
+
+    record = {
+        "timestamp": now,
+        "source": "hardware",
+        "device": d["device"],
+        "particulate_matter": {
+            "pm1_0_ugm3": pm.get("pm1_0_ugm3"),
+            "pm2_5_ugm3": pm.get("pm2_5_ugm3"),
+            "pm10_ugm3": pm.get("pm10_ugm3"),
+        },
+        "climate": {
+            "temperature_c": cli.get("temperature_c"),
+            "humidity_pct": cli.get("humidity_pct"),
+        },
+        "gas": {
+            "co_ppm": gas.get("co_ppm"),
+            "raw_adc": gas.get("raw_adc"),
+            "co_status": _co_status(float(co_ppm) if co_ppm is not None else 0),
+        },
+    }
+
+    inserted = insert_reading(record, raw_mqtt_payload=raw)
+    if not inserted:
+        logger.debug("MQTT duplicate payload skipped (dedupe)")
+
+    with _lock:
+        _latest = record
+
+    pm_out = record["particulate_matter"]
+    cli_out = record["climate"]
+    gas_out = record["gas"]
+    logger.info(
+        "MQTT PM2.5=%s Temp=%s°C Hum=%s%% CO=%s ppm",
+        pm_out.get("pm2_5_ugm3"),
+        cli_out.get("temperature_c"),
+        cli_out.get("humidity_pct"),
+        gas_out.get("co_ppm"),
+    )
+
+
 def start(background: bool = True):
-    global _started
+    global _started, _client
     if _started:
         return
     _started = True
 
-    # unique client id ป้องกัน broker kick เมื่อ reload
     client_id = f"smart-aq-backend-{uuid.uuid4().hex[:8]}"
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
-    client.on_connect = _on_connect
-    client.on_message = _on_message
+    _client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    _client.on_connect = _on_connect
+    _client.on_disconnect = _on_disconnect
+    _client.on_message = _on_message
 
     def _run():
         try:
-            client.connect(BROKER, PORT, keepalive=60)
-            client.loop_forever()
+            _client.connect(BROKER, PORT, keepalive=60)
+            _client.loop_forever()
         except Exception as e:
-            print(f"[MQTT] Error: {e}")
+            logger.exception("MQTT thread error: %s", e)
 
     if background:
         t = threading.Thread(target=_run, daemon=True)

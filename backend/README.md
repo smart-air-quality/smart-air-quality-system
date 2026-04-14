@@ -67,21 +67,51 @@ copy .env.example .env
 
 ### 4. Run the server (for stable operation / demonstration)
 ```bash
+# Recommended for demos (single process, no auto-reload — avoids duplicate MQTT workers):
+./scripts/run_demo.sh
+
+# Or manually:
 uvicorn main:app
 
-# For development with auto-reloading (WARNING: may cause duplicate MQTT processing):
-
+# Development only (auto-reload may spawn duplicate MQTT subscribers):
 uvicorn main:app --reload
 ```
 
 API available at **http://localhost:8000**  
 Swagger UI: **http://localhost:8000/docs**
 
+### 5. Database migrations (Alembic)
+
+With `.env` / `DATABASE_URL` configured:
+
+```bash
+alembic upgrade head
+```
+
+Baseline revision: `alembic/versions/001_initial_schema.py` (creates `sensor_readings`, `external_readings`).  
+Startup still runs `init_db()` for quick local SQLite setups; use Alembic when you need versioned schema changes.
+
+### 6. Tests
+
+```bash
+pip install -r requirements.txt
+pytest
+```
+
+### 7. Seed demo data (optional)
+
+When hardware is offline, insert synthetic history:
+
+```bash
+python scripts/seed_demo_data.py
+```
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/v1/` | Health check + KidBright connection status |
+| GET | `/api/v1/health` | DB + MQTT + external collector readiness |
 | GET | `/api/v1/sensors/current` | Latest reading from KidBright |
 | GET | `/api/v1/aqi/local` | AQI calculated from sensor data |
 | GET | `/api/v1/aqi/city` | City AQI from WAQI API |
@@ -90,7 +120,8 @@ Swagger UI: **http://localhost:8000/docs**
 | GET | `/api/v1/comparison` | Local vs city vs global AQI comparison |
 | GET | `/api/v1/trends` | Trend analysis and 1-hour PM2.5 prediction |
 | GET | `/api/v1/history` | Historical sensor readings |
-| GET | `/api/v1/dashboard` | All data in a single response |
+| GET | `/api/v1/dashboard` | All data in a single response (includes `awareness`) |
+| GET | `/api/v1/external/snapshots` | Secondary WAQI+OWM rows in a time window |
 
 ## Environment Variables
 

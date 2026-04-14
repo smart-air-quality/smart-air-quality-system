@@ -12,6 +12,28 @@ class Settings(BaseSettings):
     location_lon:  float = 100.5018
     host:          str   = "0.0.0.0"
     port:          int   = 8000
+
+    # Secondary collector: interval between WAQI+OWM snapshots (seconds)
+    collector_enabled: bool = True
+    collector_interval_seconds: int = 900  # 15 minutes
+    # API routes prefer DB snapshots newer than this (minutes)
+    external_snapshot_max_age_minutes: int = 45
+    # Append one JSON line per rejected MQTT message (None = log only)
+    mqtt_dead_letter_path: str | None = None
+    # logging: "text" or "json" (uvicorn still controls access log separately)
+    log_format: str = "text"
+
+    # Alerts / trends (tunable per deployment)
+    alert_pm25_hazardous: float = 250.0
+    alert_pm25_unhealthy: float = 55.0
+    alert_pm25_moderate: float = 35.0
+    alert_co_danger_ppm: float = 200.0
+    alert_co_warning_ppm: float = 35.0
+    alert_local_vs_city_ratio: float = 1.5
+    alert_local_vs_global_ratio: float = 2.0
+    trend_slope_worsening: float = 1.5
+    trend_slope_improving: float = -1.5
+    trend_alert_min_slope: float = 5.0
     # Prefer MYSQL_* when user/password contain @ (single DATABASE_URL breaks parsing).
     # SQLite: set only database_url → sqlite:///./data/app.db
     database_url: str = "mysql+pymysql://root:@127.0.0.1:3306/smart_air_quality"

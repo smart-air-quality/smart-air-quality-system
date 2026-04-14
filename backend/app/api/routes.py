@@ -1,18 +1,25 @@
 """
 FastAPI routes – Smart Air Quality Monitor
+
+API version policy: paths under `/api/v1` are stable for coursework / demo freeze.
 """
 
 import dataclasses
 import enum
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Query
+from sqlalchemy import text
 
 from app import mqtt_client
 from app.analysis import aqi as aqi_calc
 from app.analysis import alerts as alert_calc
 from app.analysis import trends as trend_calc
 from app.analysis import comparison as cmp_calc
-from app.external import waqi, openweather
+from app.database import engine
+from app.external import waqi
+from app.external.snapshot import collector_status, get_city_aqi_preferred, get_weather_preferred
+from app.external_store import get_history_between, to_public_dict
 
 router = APIRouter()
 
@@ -40,7 +47,49 @@ async def root():
     return {
         "status": "ok",
         "service": "Smart Air Quality Monitor API",
+        "api_version": "v1",
         "hardware_connected": latest is not None,
+    }
+
+
+@router.get("/health", summary="Readiness: DB, MQTT, external collector")
+async def health():
+    db_ok = False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+
+    overall = "ok" if db_ok else "degraded"
+    return {
+        "status": overall,
+        "api_version": "v1",
+        "checks": {
+            "database": {"ok": db_ok},
+            "mqtt": {
+                "ok": True,
+                "connected": mqtt_client.is_mqtt_connected(),
+            },
+            "external_collector": collector_status(),
+        },
+    }
+
+
+@router.get("/external/snapshots", summary="Secondary (WAQI+OWM) rows in a time window")
+async def external_snapshots(
+    city: str | None = Query(default=None),
+    hours: int = Query(default=24, ge=1, le=720),
+):
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(hours=hours)
+    rows = get_history_between(city=city, start_utc=start, end_utc=end, limit=500)
+    return {
+        "count": len(rows),
+        "start_utc": start.isoformat(),
+        "end_utc": end.isoformat(),
+        "records": [to_public_dict(r) for r in rows],
     }
 
 
@@ -72,14 +121,14 @@ async def aqi_local():
     return {"sensor_data": pm, "aqi": _to_dict(result)}
 
 
-@router.get("/aqi/city", summary="City AQI from WAQI API")
+@router.get("/aqi/city", summary="City AQI (DB snapshot when fresh, else WAQI API)")
 async def aqi_city(city: str = Query(default=None)):
-    return await waqi.get_city_aqi(city)
+    return await get_city_aqi_preferred(city)
 
 
-@router.get("/weather", summary="Current weather from OpenWeatherMap")
+@router.get("/weather", summary="Weather (DB snapshot when fresh, else OpenWeatherMap)")
 async def weather(city: str = Query(default=None)):
-    return await openweather.get_weather(city)
+    return await get_weather_preferred(city)
 
 
 @router.get("/alerts", summary="Intelligent alerts with health recommendations")
@@ -95,7 +144,7 @@ async def alerts():
     co   = gas.get("co_ppm") or 0
 
     aqi_result   = aqi_calc.dominant_aqi(pm25, pm10)
-    city_data    = await waqi.get_city_aqi()
+    city_data    = await get_city_aqi_preferred()
     global_data  = await waqi.get_global_samples()
     history      = mqtt_client.get_history()
     trend_data   = trend_calc.analyze(history)
@@ -127,7 +176,7 @@ async def comparison():
     pm10 = pm.get("pm10_ugm3") or 0
 
     aqi_result  = aqi_calc.dominant_aqi(pm25, pm10)
-    city_data   = await waqi.get_city_aqi()
+    city_data   = await get_city_aqi_preferred()
     global_data = await waqi.get_global_samples()
     result      = cmp_calc.compute(aqi_result.aqi, city_data.get("aqi"), global_data)
 
@@ -151,7 +200,31 @@ async def history(limit: int = Query(default=50, ge=1, le=500)):
     return {"count": len(records), "records": records}
 
 
-@router.get("/dashboard", summary="All data in one response")
+_DASHBOARD_DOC_EXAMPLE = {
+    "sensors": {"particulate_matter": {"pm2_5_ugm3": 18.0}, "last_updated": "2026-04-14T12:00:00+00:00"},
+    "local_aqi": {"aqi": 65, "category": "Moderate"},
+    "weather": {"temperature_c": 31.0, "humidity_pct": 60},
+    "awareness": {"score": 52.3, "level": "Normal"},
+    "comparison": {"awareness_score": 52.3, "summary": "Local vs global sample cities."},
+    "trends": {"trend": "stable"},
+    "alerts": {"count": 0, "items": []},
+}
+
+
+@router.get(
+    "/dashboard",
+    summary="All data in one response",
+    responses={
+        200: {
+            "description": "Dashboard bundle (stable v1). Includes `awareness` for UI badges.",
+            "content": {
+                "application/json": {
+                    "example": _DASHBOARD_DOC_EXAMPLE,
+                }
+            },
+        }
+    },
+)
 async def dashboard():
     data = _latest_sensor()
 
@@ -173,9 +246,9 @@ async def dashboard():
         }
 
     aqi_result   = aqi_calc.dominant_aqi(pm25, pm10)
-    city_data    = await waqi.get_city_aqi()
+    city_data    = await get_city_aqi_preferred()
     global_data  = await waqi.get_global_samples()
-    weather_data = await openweather.get_weather()
+    weather_data = await get_weather_preferred()
     history      = mqtt_client.get_history()
     trend_data   = trend_calc.analyze(history)
     cmp_result   = cmp_calc.compute(aqi_result.aqi, city_data.get("aqi"), global_data)
@@ -194,11 +267,15 @@ async def dashboard():
     )
 
     return {
-        "sensors":    sensor_section,
-        "local_aqi":  _to_dict(aqi_result),
-        "weather":    weather_data,
+        "sensors": sensor_section,
+        "local_aqi": _to_dict(aqi_result),
+        "weather": weather_data,
+        "awareness": {
+            "score": cmp_result.awareness_score,
+            "level": cmp_result.awareness_level,
+        },
         "comparison": _to_dict(cmp_result),
-        "trends":     trend_data,
+        "trends": trend_data,
         "alerts": {
             "count": len(alert_list),
             "items": _to_dict(alert_list),

@@ -67,6 +67,8 @@ def aqi_pm10(pm10: float) -> AQIResult:
 
 
 def dominant_aqi(pm25: float, pm10: float) -> AQIResult:
+    pm25 = max(0.0, float(pm25))
+    pm10 = max(0.0, float(pm10))
     r25 = aqi_pm25(pm25)
     r10 = aqi_pm10(pm10)
     return r25 if r25.aqi >= r10.aqi else r10

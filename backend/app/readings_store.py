@@ -1,5 +1,6 @@
 """Persist and query sensor readings (SQLite via SQLAlchemy)."""
 
+import hashlib
 from datetime import datetime, timezone
 
 from sqlalchemy import desc, select
@@ -8,8 +9,14 @@ from app.database import SessionLocal, row_to_record
 from app.models import SensorReading
 
 
-def insert_reading(record: dict) -> None:
-    """Insert one reading from the normalized MQTT record dict."""
+def insert_reading(record: dict, raw_mqtt_payload: bytes | None = None) -> bool:
+    """
+    Insert one reading from the normalized MQTT record dict.
+
+    When `raw_mqtt_payload` is set, a SHA-256 hash is stored; duplicate payloads
+    are skipped (MQTT QoS / broker redelivery).
+    Returns True if a new row was written.
+    """
     ts_raw = record["timestamp"]
     if isinstance(ts_raw, str):
         ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
@@ -20,10 +27,13 @@ def insert_reading(record: dict) -> None:
     cli = record.get("climate") or {}
     gas = record.get("gas") or {}
 
+    ingest_hash = hashlib.sha256(raw_mqtt_payload).hexdigest() if raw_mqtt_payload else None
+
     row = SensorReading(
         recorded_at=ts,
         source=record.get("source") or "hardware",
         device=record.get("device") or "kidbright32",
+        mqtt_ingest_hash=ingest_hash,
         pm1_0_ugm3=pm.get("pm1_0_ugm3"),
         pm2_5_ugm3=pm.get("pm2_5_ugm3"),
         pm10_ugm3=pm.get("pm10_ugm3"),
@@ -35,8 +45,15 @@ def insert_reading(record: dict) -> None:
     )
 
     with SessionLocal() as session:
+        if ingest_hash is not None:
+            dup = session.scalar(
+                select(SensorReading.id).where(SensorReading.mqtt_ingest_hash == ingest_hash)
+            )
+            if dup is not None:
+                return False
         session.add(row)
         session.commit()
+    return True
 
 
 def get_history(limit: int = 200) -> list[dict]:
