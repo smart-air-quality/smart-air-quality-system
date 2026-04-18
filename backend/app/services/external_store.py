@@ -1,11 +1,11 @@
-"""Persist and query secondary (WAQI + OpenWeather) snapshots."""
+"""Persist and query secondary (WAQI + WeatherAPI) snapshots."""
 
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, desc, select
 
-from app.database import SessionLocal
-from app.models import ExternalReading
+from app.database import session_scope
+from app.database.models import ExternalReading
 
 
 def insert_snapshot(
@@ -39,38 +39,38 @@ def insert_snapshot(
         source_status=source_status,
         response_time_ms=response_time_ms,
     )
-    with SessionLocal() as session:
-        session.add(row)
-        session.commit()
+    with session_scope() as db:
+        db.add(row)
+        db.commit()
 
 
 def get_latest(city: str | None = None) -> ExternalReading | None:
-    with SessionLocal() as session:
+    with session_scope() as db:
         stmt = select(ExternalReading)
         if city is not None:
             stmt = stmt.where(ExternalReading.city == city)
         stmt = stmt.order_by(desc(ExternalReading.recorded_at)).limit(1)
-        return session.scalars(stmt).first()
+        return db.scalars(stmt).first()
 
 
 def get_latest_with_waqi(city: str | None = None) -> ExternalReading | None:
     """Most recent row that has a city AQI value (stale snapshot fallback)."""
-    with SessionLocal() as session:
+    with session_scope() as db:
         stmt = select(ExternalReading).where(ExternalReading.waqi_aqi.isnot(None))
         if city is not None:
             stmt = stmt.where(ExternalReading.city == city)
         stmt = stmt.order_by(desc(ExternalReading.recorded_at)).limit(1)
-        return session.scalars(stmt).first()
+        return db.scalars(stmt).first()
 
 
 def get_latest_with_weather(city: str | None = None) -> ExternalReading | None:
-    """Most recent row that has OWM temperature (stale snapshot fallback)."""
-    with SessionLocal() as session:
+    """Most recent row that has stored weather temperature (stale snapshot fallback)."""
+    with session_scope() as db:
         stmt = select(ExternalReading).where(ExternalReading.owm_temp_c.isnot(None))
         if city is not None:
             stmt = stmt.where(ExternalReading.city == city)
         stmt = stmt.order_by(desc(ExternalReading.recorded_at)).limit(1)
-        return session.scalars(stmt).first()
+        return db.scalars(stmt).first()
 
 
 def get_history_between(
@@ -81,7 +81,7 @@ def get_history_between(
     limit: int = 500,
 ) -> list[ExternalReading]:
     """Snapshots with `recorded_at` in [start_utc, end_utc], oldest first."""
-    with SessionLocal() as session:
+    with session_scope() as db:
         conds = [
             ExternalReading.recorded_at >= start_utc,
             ExternalReading.recorded_at <= end_utc,
@@ -94,18 +94,18 @@ def get_history_between(
             .order_by(desc(ExternalReading.recorded_at))
             .limit(limit)
         )
-        rows = list(session.scalars(stmt).all())
+        rows = list(db.scalars(stmt).all())
     rows.reverse()
     return rows
 
 
 def get_history(*, city: str | None = None, limit: int = 100) -> list[ExternalReading]:
-    with SessionLocal() as session:
+    with session_scope() as db:
         stmt = select(ExternalReading)
         if city is not None:
             stmt = stmt.where(ExternalReading.city == city)
         stmt = stmt.order_by(desc(ExternalReading.id)).limit(limit)
-        rows = list(session.scalars(stmt).all())
+        rows = list(db.scalars(stmt).all())
     rows.reverse()
     return rows
 
@@ -129,8 +129,8 @@ def to_waqi_shape(row: ExternalReading) -> dict:
         "pm2_5": row.waqi_pm25,
         "pm10": row.waqi_pm10,
         "co": None,
-        "temperature": None,
-        "humidity": None,
+        "temperature": row.owm_temp_c,
+        "humidity": row.owm_humidity_pct,
         "source": "external_readings",
         "snapshot_status": row.source_status,
     }

@@ -13,10 +13,10 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 from pydantic import ValidationError
 
-from app.mqtt_deadletter import log_rejected
-from app.readings_store import get_history as _db_get_history
-from app.readings_store import insert_reading
+from app.mqtt.deadletter import log_rejected
 from app.schemas.ingest import validate_mqtt_payload
+from app.services.readings_store import get_history as _db_get_history
+from app.services.readings_store import insert_reading
 
 logger = logging.getLogger(__name__)
 

@@ -7,8 +7,8 @@ from sqlalchemy import create_engine, pool
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.config import settings
-from app.models import Base
+from app.core.config import settings
+from app.database.models import Base
 
 config = context.config
 if config.config_file_name is not None:

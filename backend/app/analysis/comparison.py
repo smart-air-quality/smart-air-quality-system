@@ -31,9 +31,15 @@ def compute(local_aqi: int, city_aqi: int | None, global_samples: list[dict]) ->
     g_min = min(aqis)
     g_max = max(aqis)
 
-    cleaner = sum(1 for v in aqis if v < local_aqi)
-    rank = cleaner + 1
-    pct_clean = round((len(aqis) - cleaner) / len(aqis) * 100, 1)
+    # Count cities with worse AQI (higher = worse air quality)
+    worse_cities = sum(1 for v in aqis if v > local_aqi)
+    better_cities = sum(1 for v in aqis if v < local_aqi)
+    rank = better_cities + 1  # rank 1 = best (lowest AQI), rank N = worst
+    
+    # Percentage of cities that have worse air quality than local
+    pct_worse = round((worse_cities / len(aqis)) * 100, 1) if aqis else 0.0
+    # Note: percentile_clean stores % of cities worse than local (for backward compatibility)
+    pct_clean = pct_worse
 
     raw = (local_aqi / g_avg - 1) * 50 + 50 if g_avg else 50
     score = round(max(0.0, min(100.0, raw)), 1)
@@ -44,10 +50,19 @@ def compute(local_aqi: int, city_aqi: int | None, global_samples: list[dict]) ->
         "equal to" if local_aqi == int(g_avg) else
         "worse than"
     )
-    summary = (
-        f"Local AQI {local_aqi} is {direction} the global average ({g_avg}). "
-        f"Cleaner than {pct_clean}% of {len(aqis)} sampled cities."
-    )
+    
+    # Summary: make it clear whether local is better or worse
+    if pct_worse >= 50:
+        summary = (
+            f"Local AQI {local_aqi} is {direction} the global average ({g_avg}). "
+            f"Better air quality than {pct_worse}% of {len(aqis)} sampled cities."
+        )
+    else:
+        pct_better = round((better_cities / len(aqis)) * 100, 1) if aqis else 0.0
+        summary = (
+            f"Local AQI {local_aqi} is {direction} the global average ({g_avg}). "
+            f"Worse air quality than {pct_better}% of {len(aqis)} sampled cities."
+        )
 
     return ComparisonResult(
         local_aqi=local_aqi, city_aqi=city_aqi,

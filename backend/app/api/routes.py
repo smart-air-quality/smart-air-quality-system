@@ -7,21 +7,32 @@ API version policy: paths under `/api/v1` are stable for coursework / demo freez
 import dataclasses
 import enum
 from datetime import datetime, timedelta, timezone
+from functools import partial
 
 from fastapi import APIRouter, Query
 from sqlalchemy import text
+from starlette.concurrency import run_in_threadpool
 
-from app import mqtt_client
 from app.analysis import aqi as aqi_calc
 from app.analysis import alerts as alert_calc
-from app.analysis import trends as trend_calc
 from app.analysis import comparison as cmp_calc
+from app.analysis import trends as trend_calc
 from app.database import engine
 from app.external import waqi
-from app.external.snapshot import collector_status, get_city_aqi_preferred, get_weather_preferred
-from app.external_store import get_history_between, to_public_dict
+from app.external.snapshot import (
+    collector_status,
+    get_city_aqi_preferred,
+    get_weather_preferred,
+)
+from app.mqtt import client as mqtt_client
+from app.services.external_store import get_history_between, to_public_dict
 
 router = APIRouter()
+
+
+def _health_db_ping() -> None:
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
 
 
 def _to_dict(obj):
@@ -41,6 +52,7 @@ def _latest_sensor() -> dict | None:
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
+
 @router.get("/", summary="Health check")
 async def root():
     latest = _latest_sensor()
@@ -56,8 +68,7 @@ async def root():
 async def health():
     db_ok = False
     try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        await run_in_threadpool(_health_db_ping)
         db_ok = True
     except Exception:
         pass
@@ -77,14 +88,22 @@ async def health():
     }
 
 
-@router.get("/external/snapshots", summary="Secondary (WAQI+OWM) rows in a time window")
+@router.get("/external/snapshots", summary="Secondary (WAQI+weather) rows in a time window")
 async def external_snapshots(
     city: str | None = Query(default=None),
     hours: int = Query(default=24, ge=1, le=720),
 ):
     end = datetime.now(timezone.utc)
     start = end - timedelta(hours=hours)
-    rows = get_history_between(city=city, start_utc=start, end_utc=end, limit=500)
+    rows = await run_in_threadpool(
+        partial(
+            get_history_between,
+            city=city,
+            start_utc=start,
+            end_utc=end,
+            limit=500,
+        )
+    )
     return {
         "count": len(rows),
         "start_utc": start.isoformat(),
@@ -126,7 +145,7 @@ async def aqi_city(city: str = Query(default=None)):
     return await get_city_aqi_preferred(city)
 
 
-@router.get("/weather", summary="Weather (DB snapshot when fresh, else OpenWeatherMap)")
+@router.get("/weather", summary="Weather (DB snapshot when fresh, else WeatherAPI.com)")
 async def weather(city: str = Query(default=None)):
     return await get_weather_preferred(city)
 
@@ -137,25 +156,25 @@ async def alerts():
     if data is None:
         return {"alert_count": 0, "alerts": [], "message": "No sensor data yet."}
 
-    pm   = data["particulate_matter"]
-    gas  = data["gas"]
+    pm = data["particulate_matter"]
+    gas = data["gas"]
     pm25 = pm.get("pm2_5_ugm3") or 0
     pm10 = pm.get("pm10_ugm3") or 0
-    co   = gas.get("co_ppm") or 0
+    co = gas.get("co_ppm") or 0
 
-    aqi_result   = aqi_calc.dominant_aqi(pm25, pm10)
-    city_data    = await get_city_aqi_preferred()
-    global_data  = await waqi.get_global_samples()
-    history      = mqtt_client.get_history()
-    trend_data   = trend_calc.analyze(history)
+    aqi_result = aqi_calc.dominant_aqi(pm25, pm10)
+    city_data = await get_city_aqi_preferred()
+    global_data = await waqi.get_global_samples()
+    history = await run_in_threadpool(mqtt_client.get_history)
+    trend_data = trend_calc.analyze(history)
 
-    global_avg = (
-        sum(s["aqi"] for s in global_data if s.get("aqi"))
-        / max(len(global_data), 1)
+    global_avg = sum(s["aqi"] for s in global_data if s.get("aqi")) / max(
+        len(global_data), 1
     )
 
     alert_list = alert_calc.generate_alerts(
-        pm25=pm25, co_ppm=co,
+        pm25=pm25,
+        co_ppm=co,
         aqi=aqi_result.aqi,
         city_aqi=city_data.get("aqi"),
         global_avg_aqi=global_avg,
@@ -171,41 +190,47 @@ async def comparison():
     if data is None:
         return {"status": "waiting", "message": "No sensor data yet."}
 
-    pm   = data["particulate_matter"]
+    pm = data["particulate_matter"]
     pm25 = pm.get("pm2_5_ugm3") or 0
     pm10 = pm.get("pm10_ugm3") or 0
 
-    aqi_result  = aqi_calc.dominant_aqi(pm25, pm10)
-    city_data   = await get_city_aqi_preferred()
+    aqi_result = aqi_calc.dominant_aqi(pm25, pm10)
+    city_data = await get_city_aqi_preferred()
     global_data = await waqi.get_global_samples()
-    result      = cmp_calc.compute(aqi_result.aqi, city_data.get("aqi"), global_data)
+    result = cmp_calc.compute(aqi_result.aqi, city_data.get("aqi"), global_data)
 
     return {
-        "local_aqi":      _to_dict(aqi_result),
-        "city_external":  city_data,
+        "local_aqi": _to_dict(aqi_result),
+        "city_external": city_data,
         "global_samples": global_data,
-        "comparison":     _to_dict(result),
+        "comparison": _to_dict(result),
     }
 
 
 @router.get("/trends", summary="PM2.5 trend analysis and 1-hour prediction")
 async def trends(hours: int = Query(default=6, ge=1, le=24)):
-    history = mqtt_client.get_history(limit=500)
+    history = await run_in_threadpool(partial(mqtt_client.get_history, limit=500))
     return trend_calc.analyze(history, hours=hours)
 
 
 @router.get("/history", summary="Historical sensor readings")
 async def history(limit: int = Query(default=50, ge=1, le=500)):
-    records = mqtt_client.get_history(limit=limit)
+    records = await run_in_threadpool(partial(mqtt_client.get_history, limit=limit))
     return {"count": len(records), "records": records}
 
 
 _DASHBOARD_DOC_EXAMPLE = {
-    "sensors": {"particulate_matter": {"pm2_5_ugm3": 18.0}, "last_updated": "2026-04-14T12:00:00+00:00"},
+    "sensors": {
+        "particulate_matter": {"pm2_5_ugm3": 18.0},
+        "last_updated": "2026-04-14T12:00:00+00:00",
+    },
     "local_aqi": {"aqi": 65, "category": "Moderate"},
     "weather": {"temperature_c": 31.0, "humidity_pct": 60},
     "awareness": {"score": 52.3, "level": "Normal"},
-    "comparison": {"awareness_score": 52.3, "summary": "Local vs global sample cities."},
+    "comparison": {
+        "awareness_score": 52.3,
+        "summary": "Local vs global sample cities.",
+    },
     "trends": {"trend": "stable"},
     "alerts": {"count": 0, "items": []},
 }
@@ -232,33 +257,33 @@ async def dashboard():
         pm25, pm10, co = 0.0, 0.0, 0.0
         sensor_section = {"status": "waiting", "message": "No hardware data yet."}
     else:
-        pm   = data["particulate_matter"]
-        gas  = data["gas"]
+        pm = data["particulate_matter"]
+        gas = data["gas"]
         pm25 = pm.get("pm2_5_ugm3") or 0
         pm10 = pm.get("pm10_ugm3") or 0
-        co   = gas.get("co_ppm") or 0
+        co = gas.get("co_ppm") or 0
         sensor_section = {
             "particulate_matter": pm,
-            "climate":            data["climate"],
-            "gas":                gas,
-            "device":             data.get("device"),
-            "last_updated":       data.get("timestamp"),
+            "climate": data["climate"],
+            "gas": gas,
+            "device": data.get("device"),
+            "last_updated": data.get("timestamp"),
         }
 
-    aqi_result   = aqi_calc.dominant_aqi(pm25, pm10)
-    city_data    = await get_city_aqi_preferred()
-    global_data  = await waqi.get_global_samples()
+    aqi_result = aqi_calc.dominant_aqi(pm25, pm10)
+    city_data = await get_city_aqi_preferred()
+    global_data = await waqi.get_global_samples()
     weather_data = await get_weather_preferred()
-    history      = mqtt_client.get_history()
-    trend_data   = trend_calc.analyze(history)
-    cmp_result   = cmp_calc.compute(aqi_result.aqi, city_data.get("aqi"), global_data)
+    history = await run_in_threadpool(mqtt_client.get_history)
+    trend_data = trend_calc.analyze(history)
+    cmp_result = cmp_calc.compute(aqi_result.aqi, city_data.get("aqi"), global_data)
 
-    global_avg = (
-        sum(s["aqi"] for s in global_data if s.get("aqi"))
-        / max(len(global_data), 1)
+    global_avg = sum(s["aqi"] for s in global_data if s.get("aqi")) / max(
+        len(global_data), 1
     )
     alert_list = alert_calc.generate_alerts(
-        pm25=pm25, co_ppm=co,
+        pm25=pm25,
+        co_ppm=co,
         aqi=aqi_result.aqi,
         city_aqi=city_data.get("aqi"),
         global_avg_aqi=global_avg,

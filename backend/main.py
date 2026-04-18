@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +70,8 @@ async def _external_collector_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from app.database import init_db
-    from app.mqtt_client import start
+    from app.database import engine, init_db
+    from app.mqtt.client import start
 
     init_db()
     start(background=True)
@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
         await collector_task
     except asyncio.CancelledError:
         pass
+    engine.dispose()
 
 
 app = FastAPI(

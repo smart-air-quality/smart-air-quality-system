@@ -17,7 +17,7 @@ Backend service that receives real-time sensor data from KidBright32 via MQTT, p
   MQTT Subscriber → receives sensor data
   AQI Calculation → US EPA standard
   WAQI API        → city AQI (real-time)
-  OpenWeatherMap  → weather data
+  WeatherAPI.com  → weather data
   Analysis        → alerts / trends / comparison
       │
       │  REST API
@@ -56,13 +56,13 @@ pip install -r requirements.txt
 #### macOS / Linux:
 ```bash
 cp .env.example .env
-# Edit .env – set WAQI_TOKEN and OWM_API_KEY (use "demo" if you don't have keys yet)
+# Edit .env – set WAQI_TOKEN and WEATHERAPI_KEY (use "demo" if you don't have keys yet)
 ```
 
 #### Windows:
 ```bash
 copy .env.example .env 
-# Edit .env – set WAQI_TOKEN and OWM_API_KEY (use "demo" if you don't have keys yet)
+# Edit .env – set WAQI_TOKEN and WEATHERAPI_KEY (use "demo" if you don't have keys yet)
 ```
 
 ### 4. Run the server (for stable operation / demonstration)
@@ -115,20 +115,20 @@ python scripts/seed_demo_data.py
 | GET | `/api/v1/sensors/current` | Latest reading from KidBright |
 | GET | `/api/v1/aqi/local` | AQI calculated from sensor data |
 | GET | `/api/v1/aqi/city` | City AQI from WAQI API |
-| GET | `/api/v1/weather` | Current weather from OpenWeatherMap |
+| GET | `/api/v1/weather` | Current weather from WeatherAPI.com |
 | GET | `/api/v1/alerts` | Intelligent alerts with health recommendations |
 | GET | `/api/v1/comparison` | Local vs city vs global AQI comparison |
 | GET | `/api/v1/trends` | Trend analysis and 1-hour PM2.5 prediction |
 | GET | `/api/v1/history` | Historical sensor readings |
 | GET | `/api/v1/dashboard` | All data in a single response (includes `awareness`) |
-| GET | `/api/v1/external/snapshots` | Secondary WAQI+OWM rows in a time window |
+| GET | `/api/v1/external/snapshots` | Secondary WAQI + weather rows in a time window |
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WAQI_TOKEN` | `demo` | Token from https://aqicn.org/data-platform/token/ |
-| `OWM_API_KEY` | `demo` | API key from https://openweathermap.org/api |
+| `WEATHERAPI_KEY` | `demo` | API key from https://www.weatherapi.com/ (optional legacy: `OWM_API_KEY`) |
 | `LOCATION_CITY` | `Bangkok` | City used for external data queries |
 | `HOST` | `0.0.0.0` | Server host |
 | `PORT` | `8000` | Server port |
@@ -207,22 +207,34 @@ Off-campus you may need **VPN** or MySQL allowed for your IP—ask the server ad
     ├── design_plan.md          # (optional docs)
     ├── task.md
     └── app/
-        ├── config.py            # Settings (loaded from .env)
-        ├── database.py          # SQLAlchemy engine + init_db
-        ├── models.py            # ORM models (SensorReading)
-        ├── readings_store.py    # Insert / query readings
-        ├── mqtt_client.py       # MQTT subscriber
+        ├── core/
+        │   └── config.py        # Settings (loaded from .env)
+        ├── database/
+        │   ├── models.py        # ORM models (SensorReading, ExternalReading)
+        │   └── session.py       # SQLAlchemy engine, SessionLocal, init_db
+        ├── services/
+        │   ├── readings_store.py   # Insert / query sensor readings
+        │   └── external_store.py   # WAQI + weather snapshots in DB
+        ├── mqtt/
+        │   ├── client.py        # MQTT subscriber (KidBright → DB + in-memory latest)
+        │   └── deadletter.py    # Log rejected MQTT payloads (optional file path)
         ├── analysis/
         │   ├── aqi.py           # AQI calculation (US EPA standard)
         │   ├── alerts.py        # Intelligent alert generation
         │   ├── trends.py        # Trend analysis and prediction
-        │   └── comparison.py     # Local vs city vs global comparison
+        │   └── comparison.py    # Local vs city vs global comparison
         ├── external/
         │   ├── waqi.py          # World Air Quality Index API client
-        │   └── openweather.py   # OpenWeatherMap API client
+        │   ├── openweather.py   # WeatherAPI.com client (module name unchanged)
+        │   ├── collector.py     # Periodic WAQI + weather → DB
+        │   └── snapshot.py      # Prefer fresh DB snapshots; else live APIs
+        ├── schemas/
+        │   └── ingest.py        # MQTT payload validation (Pydantic)
         └── api/
             └── routes.py        # REST API route definitions
 ```
+
+Imports: `from app.core.config import settings`, `from app.database import engine, init_db`, `from app.services import readings_store`, `from app.mqtt import client as mqtt_client` (see source for details).
 
 ## Related Repositories
 

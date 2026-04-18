@@ -9,7 +9,7 @@ Triggers alerts from:
 from dataclasses import dataclass, field
 from enum import Enum
 
-from app.config import settings
+from app.core.config import settings
 
 
 class Severity(str, Enum):
