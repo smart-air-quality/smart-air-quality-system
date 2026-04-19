@@ -11,3 +11,9 @@ data/
 backend/data/
 backend/plans
 .DS_Store
+
+
+frontend/node_modules
+frontend/.next/
+frontend/build/
+frontend/next-env.d.ts
