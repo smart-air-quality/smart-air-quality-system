@@ -8,25 +8,47 @@ from statistics import mean
 from app.core.config import settings
 
 
+def _parse_ts(raw: str) -> datetime:
+    s = raw.replace("Z", "+00:00")
+    ts = datetime.fromisoformat(s)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts
+
+
 def analyze(history: list[dict], hours: int = 6) -> dict:
     if not history:
         return _empty()
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    points: list[tuple[float, float]] = []
-
+    # Collect (datetime_utc, pm25) from DB / API shape
+    parsed: list[tuple[datetime, float]] = []
     for r in history:
         try:
-            ts = datetime.fromisoformat(r["timestamp"])
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            if ts < cutoff:
-                continue
+            ts = _parse_ts(r["timestamp"])
             pm25 = r["particulate_matter"]["pm2_5_ugm3"]
             if pm25 is not None:
-                points.append((ts.timestamp(), float(pm25)))
-        except (KeyError, ValueError):
+                parsed.append((ts, float(pm25)))
+        except (KeyError, ValueError, TypeError):
             continue
+
+    if len(parsed) < 2:
+        return _empty()
+
+    parsed.sort(key=lambda x: x[0])
+    now = datetime.now(timezone.utc)
+    live_cutoff = now - timedelta(hours=hours)
+
+    # Prefer the last `hours` relative to real time (production / live MQTT).
+    points: list[tuple[float, float]] = [
+        (t.timestamp(), v) for t, v in parsed if t >= live_cutoff
+    ]
+
+    # If almost nothing falls in that window (e.g. only old mock SQL from months ago),
+    # fall back to the last `hours` relative to the newest row in the batch.
+    if len(points) < 2:
+        newest = parsed[-1][0]
+        dataset_cutoff = newest - timedelta(hours=hours)
+        points = [(t.timestamp(), v) for t, v in parsed if t >= dataset_cutoff]
 
     if len(points) < 2:
         return _empty()

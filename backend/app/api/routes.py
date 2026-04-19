@@ -46,8 +46,18 @@ def _to_dict(obj):
 
 
 def _latest_sensor() -> dict | None:
-    """ดึงข้อมูลล่าสุดจาก KidBright (ผ่าน MQTT)"""
-    return mqtt_client.get_latest()
+    """ดึงข้อมูลล่าสุดจาก KidBright (ผ่าน MQTT) หรือถ้าไม่มีให้ดึงจาก DB (สำหรับ Demo)"""
+    latest = mqtt_client.get_latest()
+    if latest is not None:
+        return latest
+        
+    # Fallback to DB for demo without hardware
+    from app.services.readings_store import get_history
+    history = get_history(limit=1)
+    if history:
+        return history[0]
+        
+    return None
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -300,6 +310,7 @@ async def dashboard():
             "level": cmp_result.awareness_level,
         },
         "comparison": _to_dict(cmp_result),
+        "global_samples": global_data,
         "trends": trend_data,
         "alerts": {
             "count": len(alert_list),
