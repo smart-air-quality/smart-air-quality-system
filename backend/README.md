@@ -89,7 +89,7 @@ alembic upgrade head
 ```
 
 Baseline revision: `alembic/versions/001_initial_schema.py` (creates `sensor_readings`, `external_readings`).  
-Startup still runs `init_db()` for quick local SQLite setups; use Alembic when you need versioned schema changes.
+Startup runs `init_db()` to create tables if they don't exist; use Alembic for versioned schema changes in production.
 
 ### 6. Tests
 
@@ -165,8 +165,6 @@ DATABASE_URL=mysql+pymysql://USER:PASSWORD@iot.cpe.ku.ac.th:3306/DATABASE_NAME
 Off-campus you may need **VPN** or MySQL allowed for your IP—ask the server admin if connection is refused.
 
 **3. Default in code** (no `.env`): local MySQL `root` with empty password on `127.0.0.1`.
-
-**SQLite (optional):** do **not** set `MYSQL_HOST` / `MYSQL_DATABASE`; set `DATABASE_URL=sqlite:///./data/app.db` only.
 
 ## MQTT Configuration
 

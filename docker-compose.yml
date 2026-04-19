@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart-air-quality-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # WAQI & Weather API keys
+      - WAQI_TOKEN=demo
+      - WEATHERAPI_KEY=demo
+      
+      # Location
+      - LOCATION_CITY=Bangkok
+      - LOCATION_LAT=13.7563
+      - LOCATION_LON=100.5018
+      
+      # Database (MySQL required)
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=rootpassword
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=smart_air_quality
+      
+      # Server settings
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LOG_FORMAT=text
+      
+      # Collector settings
+      - COLLECTOR_ENABLED=true
+      - COLLECTOR_INTERVAL_SECONDS=900
+      
+      # Alert thresholds (optional - defaults are fine)
+      - ALERT_PM25_HAZARDOUS=250.0
+      - ALERT_PM25_UNHEALTHY=55.0
+      - ALERT_PM25_MODERATE=35.0
+      - ALERT_CO_DANGER_PPM=200.0
+      - ALERT_CO_WARNING_PPM=35.0
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mysql:
+    image: mysql:8
+    container_name: smart-air-quality-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: smart_air_quality
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: smart-air-quality-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # API endpoint (connects to backend service)
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      - NEXT_PUBLIC_REFRESH_SECONDS=15
+      - NEXT_PUBLIC_STALE_MINUTES=3
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

@@ -1,4 +1,4 @@
-"""Persist and query sensor readings (SQLite via SQLAlchemy)."""
+"""Persist and query sensor readings (MySQL via SQLAlchemy)."""
 
 import hashlib
 from datetime import datetime, timezone

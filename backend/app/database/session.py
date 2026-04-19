@@ -1,7 +1,6 @@
-"""SQLAlchemy engine, session factory, schema init (MySQL or SQLite)."""
+"""SQLAlchemy engine, session factory, schema init (MySQL only)."""
 
 from contextlib import contextmanager
-from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -11,14 +10,8 @@ from app.database.models import Base
 
 
 def _create_engine():
+    """Create MySQL engine with connection pooling."""
     url = settings.database_url
-    if url.startswith("sqlite"):
-        Path("data").mkdir(parents=True, exist_ok=True)
-        return create_engine(
-            url,
-            connect_args={"check_same_thread": False},
-            echo=False,
-        )
     # MySQL: small pool so we stay under shared-host max_user_connections (often 5 for the whole account).
     # pool_use_lifo=True reuses the most recently returned connection (fewer idle connections held).
     return create_engine(

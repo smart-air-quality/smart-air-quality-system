@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     trend_slope_improving: float = -1.5
     trend_alert_min_slope: float = 5.0
     # Prefer MYSQL_* when user/password contain @ (single DATABASE_URL breaks parsing).
-    # SQLite: set only database_url → sqlite:///./data/app.db
     database_url: str = "mysql+pymysql://root:@127.0.0.1:3306/smart_air_quality"
     mysql_user: str | None = None
     mysql_password: str | None = None
