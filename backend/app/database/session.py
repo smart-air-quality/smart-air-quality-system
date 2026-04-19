@@ -1,12 +1,13 @@
 """SQLAlchemy engine, session factory, schema init (MySQL or SQLite)."""
 
+from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.config import settings
-from app.models import Base
+from app.core.config import settings
+from app.database.models import Base
 
 
 def _create_engine():
@@ -18,17 +19,32 @@ def _create_engine():
             connect_args={"check_same_thread": False},
             echo=False,
         )
-    # MySQL (and other servers): connection pooling
+    # MySQL: small pool so we stay under shared-host max_user_connections (often 5 for the whole account).
+    # pool_use_lifo=True reuses the most recently returned connection (fewer idle connections held).
     return create_engine(
         url,
         echo=False,
         pool_pre_ping=True,
         pool_recycle=3600,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=30,
+        pool_use_lifo=True,
     )
 
 
 engine = _create_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@contextmanager
+def session_scope():
+    """ORM session: always ``db.close()`` so the connection returns to the pool."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def init_db() -> None:

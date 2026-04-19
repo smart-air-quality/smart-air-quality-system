@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 
 def test_duplicate_payload_not_inserted_twice(memory_session_factory):
-    from app import readings_store
+    from app.services import readings_store
 
     raw = b'{"device":"t","particulate_matter":{"pm2_5_ugm3":3.0},"climate":{},"gas":{}}'
     now = datetime.now(timezone.utc).isoformat()

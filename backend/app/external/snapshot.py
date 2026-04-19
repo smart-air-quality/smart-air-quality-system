@@ -3,10 +3,13 @@ Prefer persisted `external_readings` when fresh; else live APIs; else last good 
 """
 
 from datetime import timedelta
+from functools import partial
 
-from app.config import settings
+from starlette.concurrency import run_in_threadpool
+
+from app.core.config import settings
 from app.external import openweather, waqi
-from app.external_store import (
+from app.services.external_store import (
     get_latest,
     get_latest_with_waqi,
     get_latest_with_weather,
@@ -22,7 +25,7 @@ def _max_age() -> timedelta:
 
 async def get_city_aqi_preferred(city: str | None = None) -> dict:
     city = city or settings.location_city
-    row = get_latest(city=city)
+    row = await run_in_threadpool(partial(get_latest, city=city))
     if row and is_fresh(row, _max_age()):
         return to_waqi_shape(row)
 
@@ -30,7 +33,7 @@ async def get_city_aqi_preferred(city: str | None = None) -> dict:
     if live.get("source") == "waqi":
         return live
 
-    stale = get_latest_with_waqi(city)
+    stale = await run_in_threadpool(partial(get_latest_with_waqi, city=city))
     if stale:
         return to_waqi_shape(stale)
     return live
@@ -38,15 +41,15 @@ async def get_city_aqi_preferred(city: str | None = None) -> dict:
 
 async def get_weather_preferred(city: str | None = None) -> dict:
     city = city or settings.location_city
-    row = get_latest(city=city)
+    row = await run_in_threadpool(partial(get_latest, city=city))
     if row and is_fresh(row, _max_age()):
         return to_weather_shape(row)
 
     live = await openweather.get_weather(city)
-    if live.get("source") == "openweathermap":
+    if live.get("source") == "weatherapi":
         return live
 
-    stale = get_latest_with_weather(city)
+    stale = await run_in_threadpool(partial(get_latest_with_weather, city=city))
     if stale:
         return to_weather_shape(stale)
     return live
@@ -59,6 +62,8 @@ def collector_status() -> dict:
     return {
         "enabled": settings.collector_enabled,
         "interval_seconds": settings.collector_interval_seconds,
-        "last_run_utc": collector.last_run_utc.isoformat() if collector.last_run_utc else None,
+        "last_run_utc": (
+            collector.last_run_utc.isoformat() if collector.last_run_utc else None
+        ),
         "last_error": collector.last_error,
     }

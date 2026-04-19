@@ -5,7 +5,7 @@ Trend analysis – linear regression บน PM2.5 ย้อนหลัง N ช
 from datetime import datetime, timezone, timedelta
 from statistics import mean
 
-from app.config import settings
+from app.core.config import settings
 
 
 def analyze(history: list[dict], hours: int = 6) -> dict:

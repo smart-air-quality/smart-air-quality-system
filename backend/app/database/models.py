@@ -14,13 +14,17 @@ class SensorReading(Base):
     __tablename__ = "sensor_readings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
 
     source: Mapped[str] = mapped_column(String(32), default="hardware")
     device: Mapped[str] = mapped_column(String(64), default="kidbright32")
 
     # Same MQTT payload delivered twice → same SHA-256 → duplicate insert skipped
-    mqtt_ingest_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    mqtt_ingest_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True
+    )
 
     pm1_0_ugm3: Mapped[float | None] = mapped_column(Float, nullable=True)
     pm2_5_ugm3: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -35,12 +39,14 @@ class SensorReading(Base):
 
 
 class ExternalReading(Base):
-    """Scheduled WAQI + OpenWeather snapshots for comparison and dashboard."""
+    """Scheduled WAQI + external weather snapshots for comparison and dashboard."""
 
     __tablename__ = "external_readings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     city: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
 
     waqi_aqi: Mapped[float | None] = mapped_column(Float, nullable=True)

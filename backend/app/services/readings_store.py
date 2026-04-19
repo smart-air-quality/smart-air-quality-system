@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import desc, select
 
-from app.database import SessionLocal, row_to_record
-from app.models import SensorReading
+from app.database import row_to_record, session_scope
+from app.database.models import SensorReading
 
 
 def insert_reading(record: dict, raw_mqtt_payload: bytes | None = None) -> bool:
@@ -44,26 +44,26 @@ def insert_reading(record: dict, raw_mqtt_payload: bytes | None = None) -> bool:
         co_status=gas.get("co_status"),
     )
 
-    with SessionLocal() as session:
+    with session_scope() as db:
         if ingest_hash is not None:
-            dup = session.scalar(
+            dup = db.scalar(
                 select(SensorReading.id).where(SensorReading.mqtt_ingest_hash == ingest_hash)
             )
             if dup is not None:
                 return False
-        session.add(row)
-        session.commit()
+        db.add(row)
+        db.commit()
     return True
 
 
 def get_history(limit: int = 200) -> list[dict]:
     """Most recent `limit` rows, oldest first (for trend regression)."""
-    with SessionLocal() as session:
+    with session_scope() as db:
         stmt = (
             select(SensorReading)
             .order_by(desc(SensorReading.id))
             .limit(limit)
         )
-        rows = list(session.scalars(stmt).all())
+        rows = list(db.scalars(stmt).all())
     rows.reverse()
     return [row_to_record(r) for r in rows]
