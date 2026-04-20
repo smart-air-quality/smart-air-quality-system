@@ -1,81 +1,81 @@
 # Smart Air Quality - IoT Firmware
 
-This directory contains the MicroPython firmware for the IoT edge devices (KidBright32 / ESP32). The firmware is responsible for reading data from connected sensors (PMS7003, KY-015, MQ-9), processing the readings, and securely transmitting them to the backend via MQTT.
+MicroPython firmware for KidBright32 / ESP32: read PMS7003, KY-015, and MQ-9, then publish JSON to MQTT. The code is intentionally flat so the flow is easy to follow.
 
-## Hardware Components
+## Flow
 
-| Component | Description | Interface |
-| :--- | :--- | :--- |
-| **ESP32 / KidBright32** | Main microcontroller unit | - |
-| **PMS7003** | Particulate Matter (PM1.0, PM2.5, PM10) sensor | UART |
-| **KY-015 (DHT11/22)** | Temperature and Humidity sensor | Digital (1-Wire) |
-| **MQ-9** | Carbon Monoxide (CO) and combustible gas sensor | Analog (ADC) |
+1. Connect to Wi-Fi and sync time (NTP).
+2. Open UART / ADC / DHT drivers.
+3. Loop: read sensors, optional median smoothing, validate ranges, publish to `air_quality/sensors`, heartbeat on `air_quality/status/<device_id>`.
 
-## Project Structure
+## Hardware
+
+| Component | Role | Interface |
+| --- | --- | --- |
+| ESP32 / KidBright32 | MCU | - |
+| PMS7003 | PM1 / PM2.5 / PM10 | UART |
+| KY-015 | Temperature / humidity | Digital (DHT) |
+| MQ-9 | CO (rough) / raw ADC | Analog |
+
+## Repository layout
 
 ```text
 iot/
-├── README.md                 # This documentation
+├── README.md
+├── main.py                 # Copy to device root as main.py
 ├── config/
-│   └── config.example.py     # Configuration template (copy to config.py on board)
-├── src/
-│   ├── main.py               # Entry point script
-│   └── aqmon/                # Main application package
-│       ├── __init__.py
-│       ├── run.py            # Main execution loop
-│       ├── wifi.py           # WiFi connection manager
-│       ├── payload.py        # JSON payload builder and validation
-│       ├── smoothing.py      # Data smoothing algorithms (Rolling Median)
-│       ├── timeutil.py       # NTP synchronization and UTC formatting
-│       ├── drivers/          # Hardware-specific drivers
-│       │   ├── pms7003.py
-│       │   ├── ky015.py
-│       │   └── mq9.py
-│       └── mqtt/
-│           └── client.py     # MQTT client with queue and backoff
+│   └── config.example.py   # Copy to device root as config.py
+├── drivers/                # Copy whole folder to device as /drivers/
+│   ├── __init__.py
+│   ├── pms7003.py
+│   ├── ky015.py
+│   └── mq9.py
 └── tools/
-    └── burnin.py             # 30-minute burn-in test script
+    └── burnin.py           # Optional: CSV burn-in to UART
 ```
 
-## Wiring Guide (Example)
-
-Ensure proper voltage levels. The ESP32 operates at 3.3V logic.
+## On-device layout
 
 ```text
-PMS7003 (5V Logic - Requires Level Shifter for TX to ESP32 RX)
-  VCC 5V  ->  5V (VIN)
-  GND     ->  GND
-  TX      ->  GPIO16 (RX2)
-  RX      ->  GPIO17 (TX2)
-
-KY-015 (DHT)
-  DATA    ->  GPIO4 (Requires 4.7k - 10k pull-up resistor to 3.3V)
-  VCC     ->  3.3V
-  GND     ->  GND
-
-MQ-9 (5V Heater, Analog Out)
-  AOUT    ->  GPIO34 (ADC) (Use voltage divider if output exceeds 3.3V)
-  VCC     ->  5V
-  GND     ->  GND
+/
+├── main.py           # from iot/main.py
+├── config.py         # from iot/config/config.example.py (edit Wi-Fi / pins)
+├── drivers/          # from iot/drivers/
+└── umqtt/
+    └── simple.py     # from micropython-lib (MQTT client)
 ```
 
-*Note: Update the specific GPIO pins in your `config.py` based on your actual wiring.*
+## Flash and upload
 
-## Installation & Flashing
+1. Flash [MicroPython](https://micropython.org/download/) for your board.
+2. Copy `umqtt/simple.py` from [micropython-lib](https://github.com/micropython/micropython-lib) to `/umqtt/simple.py` on the device.
+3. Upload `iot/drivers/` to `/drivers/`, and `iot/main.py` to `/main.py`.
+4. Create `/config.py` from `iot/config/config.example.py` and set Wi-Fi, MQTT broker, pins, and `DEVICE_ID`.
+5. Start from REPL: `import main; main.run()` or use `boot.py` to call `main.run()` (avoid infinite loops in boot if you need REPL access).
 
-1. **Install MicroPython:** Flash the latest [MicroPython firmware](https://micropython.org/download/) to your ESP32 board.
-2. **Install Dependencies:** Download `umqtt/simple.py` from [micropython-lib](https://github.com/micropython/micropython-lib) and upload it to the `/umqtt/` directory on the microcontroller.
-3. **Upload Application Code:**
-   - Upload the entire `iot/src/aqmon/` directory to `/aqmon/` on the board.
-   - Upload `iot/src/main.py` to `/main.py`.
-4. **Configuration:**
-   - Copy `iot/config/config.example.py` to `/config.py` on the board.
-   - Edit `/config.py` with your WiFi credentials, MQTT broker details, and correct GPIO pins.
-5. **Execution:** The board will automatically run `main.py` on boot if configured correctly, or you can manually execute `import main; main.run()` from the REPL.
+## Wiring (example)
 
-## Payload Structure (v1)
+```text
+PMS7003
+  VCC 5V  ->  5V
+  GND     ->  GND
+  TX      ->  GPIO16 (RX)
+  RX      ->  GPIO17 (TX)
 
-The firmware sends a structured JSON payload to the configured MQTT topic (e.g., `air_quality/sensors`).
+KY-015 (DHT)
+  DATA    ->  GPIO4 + 4.7k-10k pull-up to 3.3 V
+  VCC     ->  3.3 V
+  GND     ->  GND
+
+MQ-9
+  AOUT    ->  GPIO34 (ADC); use a divider if voltage can exceed 3.3 V
+```
+
+Adjust pins in `config.py`.
+
+## MQTT payload (v1)
+
+Same nested JSON the backend expects (`backend/app/schemas/ingest.py`). Extra fields under `gas` are ignored by the API if present.
 
 ```json
 {
@@ -101,10 +101,11 @@ The firmware sends a structured JSON payload to the configured MQTT topic (e.g.,
 }
 ```
 
-## Reliability & Calibration
+Topics: `air_quality/sensors` (or `air_quality/test/sensors` when `ENV = "test"`). Heartbeat: `air_quality/status/<device_id>`.
 
-- **Network Resilience:** The system automatically attempts to reconnect to WiFi if the connection is lost.
-- **MQTT Queueing:** If the MQTT broker is unreachable, readings are temporarily queued (up to `MQTT_QUEUE_MAX`) and published once the connection is restored, using an exponential backoff strategy.
-- **Sensor Preheat:** The MQ-9 sensor requires a preheat period (~2 minutes). The payload includes a `mq9_preheat_remaining_s` field during this time.
-- **Data Smoothing:** PMS7003 readings are smoothed using a rolling median window (`SMOOTH_WINDOW`) to filter out anomalous spikes.
-- **Burn-in Testing:** Use `tools/burnin.py` for initial hardware validation and sensor stabilization before deployment.
+## Behaviour notes
+
+- **Smoothing:** `SMOOTH_WINDOW` controls a rolling median over the last N raw samples before publish. Set to `1` to disable.
+- **MQTT:** On publish failure the firmware waits `MQTT_RECONNECT_DELAY_S`, then reconnects. There is no offline queue (simpler behaviour than the previous version).
+- **MQ-9:** Allow preheat time; while preheating, `mq9_preheat_remaining_s` may be added under `gas` for debugging.
+- **Burn-in:** Optional `tools/burnin.py` logs CSV over UART for field checks.

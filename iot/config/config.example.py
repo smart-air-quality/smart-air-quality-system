@@ -1,4 +1,4 @@
-# Copy to device root as `config.py` (secrets — gitignored via iot/config/config.py).
+# Copy to the device root as `config.py` (do not commit secrets).
 
 WIFI_SSID = ""
 WIFI_PASSWORD = ""
@@ -8,38 +8,37 @@ MQTT_PORT = 1883
 MQTT_USER = None
 MQTT_PASSWORD = None
 
-# Stable identity (matches backend expectations)
+# Identity (matches backend ingest schema)
 DEVICE = "kidbright32"
 DEVICE_ID = "kb32-001"
 FIRMWARE_VERSION = "1.0.0"
 SCHEMA_VERSION = 1
 
-# "prod" → air_quality/sensors | "test" → air_quality/test/sensors
+# "prod" -> air_quality/sensors | "test" -> air_quality/test/sensors
 ENV = "prod"
 
 SAMPLING_INTERVAL_S = 10
 HEARTBEAT_INTERVAL_S = 30
-MQTT_QUEUE_MAX = 32
-RECONNECT_BACKOFF_S = (1, 2, 5, 10, 30)
+MQTT_RECONNECT_DELAY_S = 2
 
-# UART2 for PMS7003 (9600 8N1): sensor TX → ESP RX, sensor RX ← ESP TX
+# PMS7003 UART (9600 8N1): sensor TX -> ESP RX, sensor RX <- ESP TX
 PMS_UART_ID = 2
 PMS_BAUD = 9600
 PMS_TX_PIN = 17
 PMS_RX_PIN = 16
 
-# KY-015 module (DHT11/DHT22 style single-wire). Change DHT_TYPE to 22 if you use DHT22.
+# KY-015 (DHT11/DHT22). Set KY015_DHT_TYPE to 22 for DHT22.
 KY015_PIN = 4
-KY015_DHT_TYPE = 11  # 11 or 22
+KY015_DHT_TYPE = 11
 
-# MQ-9 on ADC (0–3.3 V). Adjust divisor if you use voltage divider.
+# MQ-9 on ADC (0-3.3 V). ATTN 3 = machine.ADC.ATTN_11DB
 MQ9_ADC_PIN = 34
-MQ9_ADC_ATTN = 3  # machine.ADC.ATTN_11DB
+MQ9_ADC_ATTN = 3
 
-# Smoothing window (median of last N raw samples before publish)
+# Median of last N raw samples before publish (1 = no smoothing)
 SMOOTH_WINDOW = 5
 
-# Plausibility checks before publish (tune to your environment)
+# Plausibility limits before publish (tune for your environment)
 LIMITS = {
     "pm1_max": 1000.0,
     "pm25_max": 1000.0,
