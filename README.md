@@ -15,7 +15,6 @@ An end-to-end IoT system for monitoring and analyzing air quality. This project 
 
 ## Hardware Components
 
-
 | Component       | Function                                         | Interface         |
 | --------------- | ------------------------------------------------ | ----------------- |
 | **KidBright32** | Main Microcontroller (ESP32-based)               | WiFi / I2C / UART |
@@ -23,20 +22,17 @@ An end-to-end IoT system for monitoring and analyzing air quality. This project 
 | **KY-015**      | Measures Ambient Temperature & Humidity          | Digital Pin       |
 | **MQ-9**        | Measures Carbon Monoxide (CO) Gas Concentration  | Analog Pin        |
 
-
 ---
 
 ## Trend Prediction Logic
 
 The system uses **Linear Regression** on the last 6 hours of PM2.5 data to calculate the slope (rate of change per hour) and predict future air quality.
 
-
 | Calculated Slope (µg/m³/hr) | Trend Status  | Prediction Logic (Next 1 Hour)                                      |
 | --------------------------- | ------------- | ------------------------------------------------------------------- |
 | **Slope > +1.5**            | **Worsening** | `Predicted = Current PM2.5 + Slope` (Air pollution is rising)       |
 | **Slope < -1.5**            | **Improving** | `Predicted = Current PM2.5 + Slope` (Air quality is getting better) |
 | **-1.5 ≤ Slope ≤ +1.5**     | **Stable**    | `Predicted ≈ Current PM2.5` (No significant changes expected)       |
-
 
 ---
 
@@ -68,60 +64,64 @@ graph LR
     S1 -->|MQTT 5s| MQTT
     S2 -->|MQTT 5s| MQTT
     S3 -->|MQTT 5s| MQTT
-    
+
     MQTT --> DB
     API -.->|Fetch 15m| DB
     DB --> Calc
-    
+
     Calc == "REST API" ==> UI
 ```
-
-
 
 ---
 
 ## Quick Start (Docker)
 
-The easiest way to run the entire stack (Frontend, Backend, MySQL) is using Docker Compose.
+This project is fully containerized and configured to connect to the KU database server (`iot.cpe.ku.ac.th`) out of the box to fulfill Requirement 1.2.
 
-### 1. Clone & Setup Environment
+### 1. Setup Environment
+
+First, clone the repository and set up your database credentials:
 
 ```bash
 git clone https://github.com/smart-air-quality/smart-air-quality-system.git
-cd smart-air-quality-backend
+cd smart-air-quality-system
 
-# Copy the example environment file
-cp backend/.env.example backend/.env
+# Create your environment file
+cp .env.example .env
 ```
 
+**Important:** Open the `.env` file and enter your KU database username, password, and database name.
+
 ### 2. Start Services
+
+Run the following command to start the Backend and Frontend:
 
 ```bash
 docker-compose up -d --build
 ```
 
-*(Wait a few seconds for the MySQL database to initialize)*
+### 3. Initialize Database (First Run Only)
 
-### 3. Initialize Database & Mock Data
-
-Create the database tables (Required for first run):
+Since the database is hosted on the KU server, you need to create the tables first:
 
 ```bash
 docker-compose exec backend alembic upgrade head
 ```
 
-*(Optional)* Generate and import 3 days of realistic mock data for presentation:
+_(Optional)_ If you want to populate your KU database with 3 days of realistic mock data for presentation:
 
 ```bash
+# 1. Generate the SQL file
 python3 generate_mock_data.py > mock_data.sql
-docker exec -i smart-air-quality-mysql mysql -uroot -prootpassword smart_air_quality < mock_data.sql
+
+# 2. Import it to the KU server using phpMyAdmin
+# Go to: https://iot.cpe.ku.ac.th/pma/ -> Select your DB -> Import -> Upload mock_data.sql
 ```
 
 ### 4. Access the App
 
 - **Web Dashboard:** [http://localhost:3000](http://localhost:3000)
 - **API Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Database:** `localhost:3306` (User: `root`, Password: `rootpassword`)
 
 ---
 
@@ -133,7 +133,7 @@ To stop the application, run:
 docker-compose down
 ```
 
-*(Add `-v` at the end if you want to completely wipe the database and start fresh).*
+_(Add `-v` at the end if you want to completely wipe the database and start fresh)._
 
 ---
 
@@ -143,4 +143,3 @@ docker-compose down
 - **Backend:** Python, FastAPI, SQLAlchemy, PyMySQL, Paho-MQTT
 - **Frontend:** React, Next.js, Tailwind CSS, Recharts
 - **Infrastructure:** Docker, MySQL 8
-

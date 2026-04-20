@@ -8,41 +8,21 @@ services:
       - "8000:8000"
     environment:
       # External APIs
-      - WAQI_TOKEN=demo
-      - WEATHERAPI_KEY=demo
+      - WAQI_TOKEN=${WAQI_TOKEN:-demo}
+      - WEATHERAPI_KEY=${WEATHERAPI_KEY:-demo}
       
-      # Database Connection
-      - MYSQL_USER=root
-      - MYSQL_PASSWORD=rootpassword
-      - MYSQL_HOST=mysql
+      - MYSQL_HOST=${MYSQL_HOST:-iot.cpe.ku.ac.th}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_PORT=3306
-      - MYSQL_DATABASE=smart_air_quality
-    depends_on:
-      mysql:
-        condition: service_healthy
+      
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-  mysql:
-    image: mysql:8
-    container_name: smart-air-quality-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: smart_air_quality
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   frontend:
     build:
