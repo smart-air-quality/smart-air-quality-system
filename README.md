@@ -15,6 +15,7 @@ An end-to-end IoT system for monitoring and analyzing air quality. This project 
 
 ## Hardware Components
 
+
 | Component       | Function                                         | Interface         |
 | --------------- | ------------------------------------------------ | ----------------- |
 | **KidBright32** | Main Microcontroller (ESP32-based)               | WiFi / I2C / UART |
@@ -22,17 +23,67 @@ An end-to-end IoT system for monitoring and analyzing air quality. This project 
 | **KY-015**      | Measures Ambient Temperature & Humidity          | Digital Pin       |
 | **MQ-9**        | Measures Carbon Monoxide (CO) Gas Concentration  | Analog Pin        |
 
+
 ---
 
 ## Trend Prediction Logic
 
 The system uses **Linear Regression** on the last 6 hours of PM2.5 data to calculate the slope (rate of change per hour) and predict future air quality.
 
+
 | Calculated Slope (µg/m³/hr) | Trend Status  | Prediction Logic (Next 1 Hour)                                      |
 | --------------------------- | ------------- | ------------------------------------------------------------------- |
 | **Slope > +1.5**            | **Worsening** | `Predicted = Current PM2.5 + Slope` (Air pollution is rising)       |
 | **Slope < -1.5**            | **Improving** | `Predicted = Current PM2.5 + Slope` (Air quality is getting better) |
 | **-1.5 ≤ Slope ≤ +1.5**     | **Stable**    | `Predicted ≈ Current PM2.5` (No significant changes expected)       |
+
+
+---
+
+## Database Schema (Data Integration)
+
+The system uses a relational database (MySQL) to integrate primary sensor data with secondary API data. Both tables are linked by their timestamps (`recorded_at`) for real-time comparison.
+
+```mermaid
+erDiagram
+    sensor_readings {
+        int id PK "Auto Increment"
+        datetime recorded_at "Indexed Timestamp"
+        varchar source "e.g., hardware"
+        varchar device "e.g., kidbright32"
+        varchar mqtt_ingest_hash "Unique Hash (Deduplication)"
+        float pm1_0_ugm3 "PM1.0 (µg/m³)"
+        float pm2_5_ugm3 "PM2.5 (µg/m³)"
+        float pm10_ugm3 "PM10 (µg/m³)"
+        float temperature_c "Temperature (°C)"
+        float humidity_pct "Humidity (%)"
+        float co_ppm "CO Gas (PPM)"
+        int raw_adc "Raw MQ-9 ADC Value"
+        varchar co_status "e.g., safe, warning"
+    }
+
+    external_readings {
+        int id PK "Auto Increment"
+        datetime recorded_at "Indexed Timestamp"
+        varchar city "e.g., Bangkok"
+        float waqi_aqi "City AQI (WAQI)"
+        float waqi_pm25 "City PM2.5 (WAQI)"
+        float waqi_pm10 "City PM10 (WAQI)"
+        varchar dominant_pollutant "e.g., pm25"
+        float owm_temp_c "City Temp (°C)"
+        float owm_humidity_pct "City Humidity (%)"
+        float owm_pressure_hpa "City Pressure (hPa)"
+        float owm_wind_speed_ms "City Wind Speed (m/s)"
+        varchar owm_weather_main "e.g., Clear, Rain"
+        varchar source_status "e.g., ok, fallback, error"
+        int response_time_ms "API Response Time (ms)"
+    }
+
+    %% Relationship: Data is integrated and compared based on the recorded timestamp
+    sensor_readings ||--|| external_readings : "Compared by Time (recorded_at)"
+```
+
+
 
 ---
 
@@ -71,6 +122,8 @@ graph LR
 
     Calc == "REST API" ==> UI
 ```
+
+
 
 ---
 
@@ -111,6 +164,7 @@ docker-compose exec backend alembic upgrade head
 *(Optional)* To test the dashboard immediately without waiting for new hardware data, we have provided an exported dataset containing 3 days of real sensor readings.
 
 **How to import the collected data:**
+
 1. Go to **[https://iot.cpe.ku.ac.th/pma/](https://iot.cpe.ku.ac.th/pma/)** and log in.
 2. Select your database from the left panel.
 3. Click on the **Import** tab at the top.
@@ -132,7 +186,7 @@ To stop the application, run:
 docker-compose down
 ```
 
-_(Add `-v` at the end if you want to completely wipe the database and start fresh)._
+*(Add `-v` at the end if you want to completely wipe the database and start fresh).*
 
 ---
 
@@ -142,3 +196,4 @@ _(Add `-v` at the end if you want to completely wipe the database and start fres
 - **Backend:** Python, FastAPI, SQLAlchemy, PyMySQL, Paho-MQTT
 - **Frontend:** React, Next.js, Tailwind CSS, Recharts
 - **Infrastructure:** Docker, MySQL 8
+
