@@ -22,7 +22,7 @@ interface ChartProps {
   description: string;
 }
 
-function LineChart({ title, data, color, unit, info, description }: ChartProps) {
+function MetricChart({ title, data, color, unit, info, description }: ChartProps) {
   const [showSummary, setShowSummary] = useState(false);
 
   const { min, max, latest, avg } = useMemo(() => {
@@ -53,12 +53,14 @@ function LineChart({ title, data, color, unit, info, description }: ChartProps) 
   return (
     <article className="bg-white border-2 border-gray-900/20 rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.2)] hover:-translate-y-1 transition-all duration-300 flex flex-col h-[480px]">
       <div className="mb-6 border-b border-gray-100 pb-5">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-            {title}
-            <InfoTooltip text={info} />
-          </h3>
-          <div className="flex items-center gap-3 text-xs text-gray-500 font-medium">
+        <div className="flex justify-between items-start mb-2 gap-3">
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center flex-wrap gap-x-1">
+              {title}
+              <InfoTooltip text={info} />
+            </h3>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-500 font-medium shrink-0">
             <span>Min: {numberOrDash(min)}</span>
             <span>Max: {numberOrDash(max)}</span>
             <span className="bg-gray-100 px-2 py-1 rounded-md text-gray-800 font-semibold">
@@ -66,8 +68,9 @@ function LineChart({ title, data, color, unit, info, description }: ChartProps) 
             </span>
           </div>
         </div>
-        
+
         <button
+          type="button"
           onClick={() => setShowSummary(!showSummary)}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 font-medium transition-colors mt-1"
         >
@@ -81,8 +84,17 @@ function LineChart({ title, data, color, unit, info, description }: ChartProps) 
             <span className="font-semibold block mb-2 text-gray-900">Analysis:</span>
             {description}
             <div className="mt-3 pt-3 border-t border-gray-900/20 grid grid-cols-2 gap-4 text-xs">
-              <div><strong className="text-gray-900">Average:</strong> {numberOrDash(avg)} {unit}</div>
-              <div><strong className="text-gray-900">Status:</strong> {latest !== null && avg !== null ? (latest > avg ? "Above Average" : "Below Average") : "-"}</div>
+              <div>
+                <strong className="text-gray-900">Average:</strong> {numberOrDash(avg)} {unit}
+              </div>
+              <div>
+                <strong className="text-gray-900">Status:</strong>{" "}
+                {latest !== null && avg !== null
+                  ? latest > avg
+                    ? "Above Average"
+                    : "Below Average"
+                  : "-"}
+              </div>
             </div>
           </div>
         )}
@@ -91,10 +103,7 @@ function LineChart({ title, data, color, unit, info, description }: ChartProps) 
       <div className="grow w-full h-full min-h-0">
         {formattedData.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-            <RechartsLineChart
-              data={formattedData}
-              margin={{ top: 5, right: 5, left: -20, bottom: 0 }}
-            >
+            <RechartsLineChart data={formattedData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
               <XAxis
                 dataKey="time"
@@ -122,13 +131,16 @@ function LineChart({ title, data, color, unit, info, description }: ChartProps) 
                 }}
                 itemStyle={{ color: "#111827", fontWeight: 500 }}
                 labelStyle={{ color: "#6b7280", marginBottom: "4px" }}
-                labelFormatter={(label, payload) => {
+                labelFormatter={(_label, payload) => {
                   if (payload && payload.length > 0) {
                     return payload[0].payload.fullDate;
                   }
-                  return label;
+                  return _label;
                 }}
-                formatter={(value: number | string | ReadonlyArray<number | string> | undefined) => [`${Number(value ?? 0).toFixed(1)} ${unit}`, title]}
+                formatter={(value: number | string | ReadonlyArray<number | string> | undefined) => [
+                  `${Number(value ?? 0).toFixed(1)} ${unit}`,
+                  title,
+                ]}
               />
               <Line
                 type="monotone"
@@ -155,7 +167,7 @@ interface ChartsProps {
 }
 
 export function Charts({ history }: ChartsProps) {
-  const timestamps = history.map(h => new Date(h.timestamp).getTime()).filter(t => !Number.isNaN(t));
+  const timestamps = history.map((h) => new Date(h.timestamp).getTime()).filter((t) => !Number.isNaN(t));
   const minTs = timestamps.length ? Math.min(...timestamps) : null;
   const maxTs = timestamps.length ? Math.max(...timestamps) : null;
 
@@ -180,7 +192,6 @@ export function Charts({ history }: ChartsProps) {
 
   return (
     <div className="space-y-6">
-      {/* Summary Banner */}
       <div className="bg-white border-2 border-gray-900/20 rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.12)] flex items-start gap-4">
         <div className="p-2.5 bg-gray-100 text-gray-700 rounded-lg shrink-0 mt-1">
           <History className="w-5 h-5" />
@@ -188,42 +199,46 @@ export function Charts({ history }: ChartsProps) {
         <div>
           <h3 className="text-base font-semibold text-gray-900 mb-1">Historical Data Overview</h3>
           <p className="text-sm text-gray-600 leading-relaxed">
-            Displaying <strong>{history.length}</strong> records recorded from <strong className="text-gray-900">{startTimeStr}</strong> to <strong className="text-gray-900">{endTimeStr}</strong>. 
-            These charts help identify daily patterns, such as pollution spikes during rush hours or temperature drops at night.
+            Displaying <strong>{history.length}</strong> records from{" "}
+            <strong className="text-gray-900">{startTimeStr}</strong> to{" "}
+            <strong className="text-gray-900">{endTimeStr}</strong>. Each chart supports{" "}
+            <strong className="text-gray-900">View details</strong> for a short analysis, the historical average, and
+            whether the latest reading is above or below that average — matching the interactive historical charts
+            described in the project scope.
           </p>
         </div>
       </div>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <LineChart 
-          title="PM2.5 Time-Series" 
-          data={pm25Data} 
-          color="#374151" 
-          unit="µg/m³" 
+        <MetricChart
+          title="PM2.5 Time-Series"
+          data={pm25Data}
+          color="#374151"
+          unit="µg/m³"
           info="Historical PM2.5 particulate matter concentration over time."
           description="Tracks fine particulate matter (PM2.5). Spikes often indicate worsening air pollution from traffic, burning, or atmospheric conditions."
         />
-        <LineChart 
-          title="Temperature" 
-          data={tempData} 
-          color="#0284c7" 
-          unit="°C" 
+        <MetricChart
+          title="Temperature"
+          data={tempData}
+          color="#0284c7"
+          unit="°C"
           info="Historical ambient temperature readings from the local sensor."
           description="Monitors ambient temperature changes. Noticeable patterns usually follow the time of day (cooler at night, hotter in the afternoon)."
         />
-        <LineChart 
-          title="Humidity" 
-          data={humidityData} 
-          color="#0d9488" 
-          unit="%" 
+        <MetricChart
+          title="Humidity"
+          data={humidityData}
+          color="#0d9488"
+          unit="%"
           info="Historical relative humidity readings."
           description="Shows relative humidity levels. High humidity combined with high PM2.5 can make the air feel heavier and more polluted."
         />
-        <LineChart 
-          title="CO Level" 
-          data={coData} 
-          color="#6b7280" 
-          unit="ppm" 
+        <MetricChart
+          title="CO Level"
+          data={coData}
+          color="#6b7280"
+          unit="ppm"
           info="Historical Carbon Monoxide gas concentration."
           description="Records Carbon Monoxide gas levels. Elevated levels are typically linked to vehicle emissions during rush hours."
         />

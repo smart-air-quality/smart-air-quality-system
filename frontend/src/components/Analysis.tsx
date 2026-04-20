@@ -14,12 +14,16 @@ import {
 } from "lucide-react";
 import { InfoTooltip } from "./InfoTooltip";
 import {
-  LineChart,
+  ComposedChart,
+  Area,
   Line,
   XAxis,
   YAxis,
+  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
+  ReferenceLine,
 } from "recharts";
 
 interface AnalysisProps {
@@ -61,11 +65,14 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
 
     const chartData = filtered.map((d) => {
       const trendVal = lastVal + slopePerMs * (d.ts - latestTs);
+      const date = new Date(d.ts);
       return {
-        time: new Date(d.ts).toLocaleTimeString([], {
+        time: date.toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         }),
+        fullTime: date.toLocaleString(),
+        isForecast: false,
         Actual: d.pm25,
         Trend: Math.max(0, Number(trendVal.toFixed(1))),
       };
@@ -78,13 +85,26 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
         new Date(futureTs).toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
-        }) + " (Pred)",
+        }) + " +1h",
+      fullTime: `${new Date(futureTs).toLocaleString()} — 1-hour linear forecast`,
+      isForecast: true,
       Actual: undefined,
       Trend: Math.max(0, Number(futureTrendVal.toFixed(1))),
     });
 
     return chartData;
   }, [history, dashboard.trends]);
+
+  const trendLabel = (dashboard.trends?.trend ?? "-").toLowerCase();
+  const trendBadgeClass =
+    trendLabel === "worsening"
+      ? "bg-red-50 text-red-800 border-red-200"
+      : trendLabel === "improving"
+        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+        : "bg-gray-100 text-gray-800 border-gray-200";
+
+  const boundaryTime =
+    trendChartData.length >= 2 ? trendChartData[trendChartData.length - 2]?.time : undefined;
 
   return (
     <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -176,21 +196,27 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
       </article>
 
       {/* Trend Analysis */}
-      <article className="bg-white border-2 border-gray-900/20 rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.2)] hover:-translate-y-1 transition-all duration-300 flex flex-col">
-        <h3 className="text-lg font-semibold text-gray-900 border-b border-gray-100 pb-4 mb-5 flex items-center">
+      <article className="bg-white border-2 border-gray-900/20 rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.2)] hover:-translate-y-1 transition-all duration-300 flex flex-col lg:min-h-[520px]">
+        <h3 className="text-lg font-semibold text-gray-900 border-b border-gray-100 pb-4 mb-4 flex items-center">
           Trend Analysis
-          <InfoTooltip text="Predicts PM2.5 levels for the next hour based on the last 6 hours of data using linear regression." />
+          <InfoTooltip text="Blue: measured PM2.5 (last ~6h). Red dashed: linear regression through the latest point, extended 1h ahead. Slope comes from the backend trend model." />
         </h3>
-        <div className="space-y-4 text-sm text-gray-600">
-          <div className="flex justify-between items-center">
-            <span className="font-medium text-gray-500">Trend (6h):</span>
-            <span className="capitalize px-3 py-1 bg-gray-100 text-gray-800 rounded-md font-medium">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600 mb-2">
+          <div className="flex sm:flex-col sm:items-start justify-between sm:justify-start gap-1 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2">
+            <span className="font-medium text-gray-500 shrink-0">Trend (6h)</span>
+            <span className={`capitalize px-2.5 py-0.5 rounded-md font-semibold text-xs border ${trendBadgeClass}`}>
               {dashboard.trends?.trend ?? "-"}
             </span>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="font-medium text-gray-500">Prediction (1h):</span>
-            <span className="font-semibold text-lg text-gray-900">
+          <div className="flex sm:flex-col sm:items-start justify-between sm:justify-start gap-1 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2">
+            <span className="font-medium text-gray-500 shrink-0">Slope</span>
+            <span className="font-semibold tabular-nums text-gray-900">
+              {numberOrDash(dashboard.trends?.slope_per_hour, " µg/m³ per hour")}
+            </span>
+          </div>
+          <div className="flex sm:flex-col sm:items-start justify-between sm:justify-start gap-1 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 sm:col-span-1">
+            <span className="font-medium text-gray-500 shrink-0">Pred. +1h</span>
+            <span className="font-semibold tabular-nums text-lg text-gray-900 leading-tight">
               {numberOrDash(
                 dashboard.trends?.predicted_pm2_5_1h ??
                   dashboard.trends?.predicted_pm25_1h,
@@ -200,55 +226,130 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
           </div>
         </div>
 
-        {trendChartData.length > 0 && (
-          <div className="h-32 w-full mt-4 -ml-4">
-            <ResponsiveContainer
-              width="100%"
-              height="100%"
-              minWidth={0}
-              minHeight={0}
-            >
-              <LineChart data={trendChartData}>
-                <XAxis dataKey="time" hide />
-                <YAxis domain={["auto", "auto"]} hide />
+        {trendChartData.length > 0 ? (
+          <div className="w-full flex-1 min-h-[260px] h-[min(40vh,320px)] mt-2">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <ComposedChart data={trendChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="pmActualFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#2563eb" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis
+                  dataKey="time"
+                  stroke="#9ca3af"
+                  tick={{ fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={{ stroke: "#e5e7eb" }}
+                  interval="preserveStartEnd"
+                  minTickGap={24}
+                  height={36}
+                />
+                <YAxis
+                  stroke="#9ca3af"
+                  tick={{ fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  domain={[0, "auto"]}
+                  width={44}
+                  tickFormatter={(v) => `${v}`}
+                  label={{
+                    value: "PM2.5 µg/m³",
+                    angle: -90,
+                    position: "insideLeft",
+                    style: { fill: "#6b7280", fontSize: 11 },
+                    offset: 4,
+                  }}
+                />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "#ffffff",
-                    borderRadius: "8px",
+                    borderRadius: "10px",
                     border: "1px solid #e5e7eb",
-                    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                    boxShadow: "0 10px 15px -3px rgba(0,0,0,0.08)",
                     fontSize: "12px",
                   }}
-                  itemStyle={{ color: "#111827", fontWeight: 500 }}
-                  labelStyle={{ display: "none" }}
+                  labelStyle={{ color: "#374151", fontWeight: 600, marginBottom: 6 }}
+                  labelFormatter={(_label, payload) =>
+                    (payload?.[0]?.payload as { fullTime?: string })?.fullTime ?? _label
+                  }
                   formatter={(
-                    value:
-                      | number
-                      | string
-                      | ReadonlyArray<number | string>
-                      | undefined,
+                    value: number | string | ReadonlyArray<number | string> | undefined,
                     name: number | string | undefined,
-                  ) => [`${value ?? 0} µg/m³`, String(name ?? "")]}
+                  ) => {
+                    if (value === undefined || value === "") return ["—", String(name ?? "")];
+                    return [`${Number(value).toFixed(1)} µg/m³`, String(name ?? "")];
+                  }}
+                />
+                <Legend
+                  verticalAlign="top"
+                  align="right"
+                  wrapperStyle={{ fontSize: "12px", paddingBottom: "4px" }}
+                />
+                {boundaryTime ? (
+                  <ReferenceLine
+                    x={boundaryTime}
+                    stroke="#94a3b8"
+                    strokeDasharray="4 4"
+                    label={{
+                      value: "Now →",
+                      position: "top",
+                      fill: "#6b7280",
+                      fontSize: 11,
+                    }}
+                  />
+                ) : null}
+                <Area
+                  type="monotone"
+                  dataKey="Actual"
+                  name="Measured PM2.5"
+                  legendType="none"
+                  stroke="none"
+                  fill="url(#pmActualFill)"
+                  connectNulls
+                  isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
                   dataKey="Actual"
-                  stroke="#94a3b8"
-                  strokeWidth={2}
+                  name="Measured PM2.5"
+                  stroke="#2563eb"
+                  strokeWidth={2.5}
                   dot={false}
+                  activeDot={{ r: 5, fill: "#2563eb", stroke: "#fff", strokeWidth: 2 }}
+                  connectNulls
                   isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
                   dataKey="Trend"
-                  stroke="#ef4444"
+                  name="Linear fit & +1h"
+                  stroke="#dc2626"
                   strokeWidth={2}
-                  strokeDasharray="4 4"
-                  dot={false}
+                  strokeDasharray="6 5"
+                  dot={(props: {
+                    cx?: number;
+                    cy?: number;
+                    payload?: { isForecast?: boolean };
+                  }) => {
+                    const { cx, cy, payload } = props;
+                    if (cx == null || cy == null || !payload?.isForecast) return null;
+                    return (
+                      <circle cx={cx} cy={cy} r={5} fill="#dc2626" stroke="#fff" strokeWidth={2} />
+                    );
+                  }}
+                  activeDot={{ r: 6, fill: "#dc2626", stroke: "#fff", strokeWidth: 2 }}
+                  connectNulls
                   isAnimationActive={false}
                 />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex-1 min-h-[200px] flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/50 text-sm text-gray-500 mt-2">
+            Not enough PM2.5 history in the last 6 hours to plot a trend.
           </div>
         )}
 
@@ -291,7 +392,7 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
           Awareness Score
           <InfoTooltip text="A calculated score (0-100) combining local AQI severity and your global ranking percentile." />
         </h3>
-        <div className="flex-grow flex flex-col items-center justify-center py-2">
+        <div className="grow flex flex-col items-center justify-center py-2">
           <p className="text-6xl font-bold text-gray-900 mb-4">
             {numberOrDash(dashboard.awareness?.score)}
           </p>

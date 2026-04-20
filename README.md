@@ -127,11 +127,15 @@ graph LR
 
 ---
 
-## Quick Start (Docker)
+## Quick Start
+
+You can run everything with **Docker** (simplest, matches deployment) or run the **backend and frontend directly** on your machine (good for debugging and faster UI reloads).
+
+### Option A: Docker
 
 This project is fully containerized and configured to connect to the KU database server (`iot.cpe.ku.ac.th`) out of the box to fulfill Requirement 1.2.
 
-### 1. Setup Environment
+#### A.1. Setup environment
 
 First, clone the repository and set up your database credentials:
 
@@ -139,21 +143,22 @@ First, clone the repository and set up your database credentials:
 git clone https://github.com/smart-air-quality/smart-air-quality-system.git
 cd smart-air-quality-system
 
-# Create your environment file
+# Create your environment file (macOS/Linux)
 cp .env.example .env
+
+# Create your environment file (Windows Command Prompt)
+copy .env.example .env
 ```
 
 **Important:** Open the `.env` file and enter your KU database username, password, and database name.
 
-### 2. Start Services
-
-Run the following command to start the Backend and Frontend:
+#### A.2. Start services
 
 ```bash
 docker-compose up -d --build
 ```
 
-### 3. Initialize Database (First Run Only)
+#### A.3. Initialize database (first run only)
 
 Since the database is hosted on the KU server, you need to create the tables first:
 
@@ -171,22 +176,88 @@ docker-compose exec backend alembic upgrade head
 4. Upload the file located at `data/export/collected_data.sql` from this repository.
 5. Click **Go** to import the data.
 
-### 4. Access the App
+#### A.4. Access the app
 
 - **Web Dashboard:** [http://localhost:3000](http://localhost:3000)
 - **API Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
 
----
-
-## Stopping Services
-
-To stop the application, run:
+#### Stopping Docker services
 
 ```bash
 docker-compose down
 ```
 
 *(Add `-v` at the end if you want to completely wipe the database and start fresh).*
+
+---
+
+### Option B: Without Docker (local backend + frontend)
+
+Use this when you prefer a local Python venv and `npm run dev`, or when Docker is not available.
+
+**Prerequisites:** Python 3.10+ (3.11+ recommended), Node.js 20+, and a reachable MySQL database (KU host or local MySQL) with credentials ready.
+
+#### B.1. Clone and backend environment
+
+```bash
+git clone https://github.com/smart-air-quality/smart-air-quality-system.git
+cd smart-air-quality-system/backend
+
+# macOS / Linux
+cp .env.example .env
+
+# Windows Command Prompt
+copy .env.example .env
+```
+
+Edit `backend/.env`: set `MYSQL_*` (or `DATABASE_URL`), `WAQI_TOKEN`, `WEATHERAPI_KEY`, and optional `LOCATION_*` as needed. Demo API keys still work with fallback data.
+
+#### B.2. Backend (virtualenv + migrations + server)
+
+**macOS / Linux:**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Windows:**
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+- API: [http://localhost:8000](http://localhost:8000)
+- Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+Keep this terminal open. Optional seed data: import `data/export/collected_data.sql` via phpMyAdmin the same way as in Option A.
+
+#### B.3. Frontend (second terminal)
+
+In another terminal, go to the **repository root** (`smart-air-quality-system/`, i.e. the folder that contains `backend/` and `frontend/`). If you are still inside `backend/`, run `cd ..` first. Then:
+
+```bash
+cd frontend
+cp .env.example .env.local
+```
+
+Ensure `NEXT_PUBLIC_API_BASE_URL` in `.env.local` points at your backend (default `http://localhost:8000`). Then:
+
+```bash
+npm install
+npm run dev
+```
+
+- Dashboard: [http://localhost:3000](http://localhost:3000)
+
+More detail for the API lives in [backend/README.md](backend/README.md); frontend env vars are described in [frontend/README.md](frontend/README.md).
 
 ---
 
