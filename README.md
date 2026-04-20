@@ -108,15 +108,14 @@ Since the database is hosted on the KU server, you need to create the tables fir
 docker-compose exec backend alembic upgrade head
 ```
 
-_(Optional)_ If you want to populate your KU database with 3 days of realistic mock data for presentation:
+*(Optional)* To test the dashboard immediately without waiting for new hardware data, we have provided an exported dataset containing 3 days of real sensor readings.
 
-```bash
-# 1. Generate the SQL file
-python3 generate_mock_data.py > mock_data.sql
-
-# 2. Import it to the KU server using phpMyAdmin
-# Go to: https://iot.cpe.ku.ac.th/pma/ -> Select your DB -> Import -> Upload mock_data.sql
-```
+**How to import the collected data:**
+1. Go to **[https://iot.cpe.ku.ac.th/pma/](https://iot.cpe.ku.ac.th/pma/)** and log in.
+2. Select your database from the left panel.
+3. Click on the **Import** tab at the top.
+4. Upload the file located at `data/export/collected_data.sql` from this repository.
+5. Click **Go** to import the data.
 
 ### 4. Access the App
 
