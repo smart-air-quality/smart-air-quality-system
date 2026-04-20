@@ -114,13 +114,38 @@ More: [`backend/README.md`](backend/README.md), [`frontend/README.md`](frontend/
 
 ---
 
-## Trend logic (6h PM2.5 regression)
+## Trend logic (PM2.5 linear regression)
 
-| Slope (µg/m³ per h) | Label     | Next-step idea              |
-| ------------------- | --------- | --------------------------- |
-| **> +1.5**          | Worsening | Predicted ≈ current + slope |
-| **< −1.5**          | Improving | Predicted ≈ current + slope |
-| **between**         | Stable    | Predicted ≈ current         |
+The backend fits a **straight line** to **local PM2.5** only (not other pollutants), over a sliding time window (default **6 hours**). It uses ordinary **least-squares regression**: time is expressed in **hours** from the first sample in the window, and the slope is **µg/m³ per hour** (`slope_per_hour`).
+
+**Which points are used**
+
+- Normally, only readings whose timestamps fall in the last *N* hours relative to **“now”** (UTC) are used—good for live MQTT data.
+- If almost nothing falls in that window (e.g. old demo SQL), the code **falls back** to the last *N* hours relative to the **newest** row in the batch so a trend can still be shown.
+
+**Labels (worsening / stable / improving)**
+
+Classification is by comparing the fitted slope to configurable thresholds (defaults in `backend/app/core/config.py`: **`trend_slope_worsening` = +1.5**, **`trend_slope_improving` = −1.5**):
+
+| Slope (µg/m³ per h) | Label       | Meaning (rough)                          |
+| ------------------- | ----------- | ---------------------------------------- |
+| **> +1.5**          | Worsening   | PM2.5 rising faster than the “stable” band |
+| **< −1.5**          | Improving   | PM2.5 falling faster than the stable band |
+| **in between**      | Stable      | Change within the dead band              |
+
+If there are fewer than **two** valid PM2.5 points in the window, the API returns **`trend: "unknown"`** and omits useful predictions.
+
+**Predictions (extrapolation only)**
+
+The **latest PM2.5** in the window is treated as the intercept for a simple forward line: **predicted = max(0, last_pm25 + slope × hours_ahead)**. The dashboard exposes horizons such as **+1 h**, **+24 h**, and **+72 h**; these are **not** weather or dispersion models—only the same linear slope extended in time. The UI notes that long horizons are extrapolations.
+
+**API**
+
+- `GET /api/v1/trends?hours=6` (1–24) — same regression with an adjustable window; the bundled dashboard uses the default window in its trend block.
+
+**Alerts (related)**
+
+When the label is **worsening** and the slope exceeds **`trend_alert_min_slope`** (default **5.0** µg/m³/h), the alert pipeline can emit a rapid-increase style warning—see `backend/app/analysis/alerts.py`.
 
 ---
 
