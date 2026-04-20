@@ -1,20 +1,54 @@
-# 🍃 Smart Air Quality Monitor
+# Smart Air Quality Monitor
 
-An end-to-end IoT system for monitoring and analyzing air quality. This project collects hardware sensor data via MQTT, fetches global weather APIs, analyzes trends, and visualizes everything on a real-time dashboard.
+End-to-end IoT air-quality monitoring: sensors over MQTT, FastAPI + MySQL, external WAQI/weather data, analytics, and a Next.js dashboard.
 
 ---
 
-## Key Features
+## Project overview
 
-- **Real-time IoT Ingestion:** Collects PM1.0, PM2.5, PM10, Temperature, Humidity, and CO gas levels via MQTT.
-- **Global Comparison:** Compares local air quality against city averages and 10 major global cities.
-- **Smart Analytics:** Calculates US EPA AQI, predicts 1-hour PM2.5 trends using linear regression, and generates health alerts.
-- **Modern Dashboard:** A responsive Next.js web app with live updates and historical charts.
+The **Smart Air Quality Monitor** integrates a KidBright32-based sensor node (PM, temperature, humidity, CO), a Python **FastAPI** backend that persists readings to **MySQL** and pulls secondary data (WAQI, weather), and a **Next.js** dashboard for live and historical visualization, comparisons, trend extrapolation, alerts, and an awareness score.
+
+---
+
+## Team
+
+| Name                 | Student ID | Affiliation (department, faculty, university)                                    |
+| -------------------- | ---------- | -------------------------------------------------------------------------------- |
+| Thapanan Suwansukhum | 6710545555 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
+| Bhumipat Kusalatham  | 6710545831 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
+
+---
+
+## Features
+
+- **Real-time IoT ingestion:** PM1.0, PM2.5, PM10, temperature, humidity, and CO via MQTT.
+- **Global comparison:** Local readings vs city-level and sampled global cities (WAQI-backed).
+- **Analytics:** US EPA–style local AQI, linear-regression trend (6h window), optional forecast horizons (+1h / +1 day / +3 days in the UI), intelligent alerts.
+- **Dashboard:** Next.js + Tailwind + Recharts; auto-refresh, historical line charts with collapsible summaries, tooltips, stale-sensor warning.
+
+---
+
+## Requirements (libraries & tools)
+
+Versions below match the **Dockerfile** / `package.json` / `requirements.txt` in this repo; slightly newer patch versions are usually fine.
+
+| Tool                        | Version / notes                                                           |
+| --------------------------- | ------------------------------------------------------------------------- |
+| **Python**                  | **3.11** (backend Docker image); **3.10+** supported for local venv.      |
+| **Node.js**                 | **20+** (for Next.js 16 frontend; LTS recommended).                       |
+| **npm**                     | 10+ (ships with Node 20).                                                 |
+| **Docker & Docker Compose** | For [Quick Start — Option A](#option-a-docker) (Compose file v3.8).       |
+| **MySQL**                   | **8.x** (hosted e.g. on KU `iot.cpe.ku.ac.th` or any reachable instance). |
+
+**Backend (pip):** see [`backend/requirements.txt`](backend/requirements.txt) — includes FastAPI 0.115.x, Uvicorn, SQLAlchemy 2.x, PyMySQL, Paho-MQTT, Alembic, HTTPX, Pydantic v2, etc.
+
+**Frontend (npm):** see [`frontend/package.json`](frontend/package.json) — includes Next.js **16.2.x**, React **19.x**, Tailwind **4.x**, Recharts **3.x**, TypeScript **5.x**.
+
+**IoT (device):** MicroPython on ESP32 / KidBright32; see [`iot/`](iot/) for drivers and config.
 
 ---
 
 ## Hardware Components
-
 
 | Component       | Function                                         | Interface         |
 | --------------- | ------------------------------------------------ | ----------------- |
@@ -23,13 +57,11 @@ An end-to-end IoT system for monitoring and analyzing air quality. This project 
 | **KY-015**      | Measures Ambient Temperature & Humidity          | Digital Pin       |
 | **MQ-9**        | Measures Carbon Monoxide (CO) Gas Concentration  | Analog Pin        |
 
-
 ---
 
 ## Trend Prediction Logic
 
 The system uses **Linear Regression** on the last 6 hours of PM2.5 data to calculate the slope (rate of change per hour) and predict future air quality.
-
 
 | Calculated Slope (µg/m³/hr) | Trend Status  | Prediction Logic (Next 1 Hour)                                      |
 | --------------------------- | ------------- | ------------------------------------------------------------------- |
@@ -37,12 +69,11 @@ The system uses **Linear Regression** on the last 6 hours of PM2.5 data to calcu
 | **Slope < -1.5**            | **Improving** | `Predicted = Current PM2.5 + Slope` (Air quality is getting better) |
 | **-1.5 ≤ Slope ≤ +1.5**     | **Stable**    | `Predicted ≈ Current PM2.5` (No significant changes expected)       |
 
-
 ---
 
 ## Database Schema (Data Integration)
 
-The system uses a relational database (MySQL) to integrate primary sensor data with secondary API data. Both tables are linked by their timestamps (`recorded_at`) for real-time comparison.
+**Integration diagram (ER):** primary **sensor** readings vs secondary **external** snapshots, aligned in time for comparison on the dashboard. The system uses MySQL; rows are joined logically by `recorded_at` (and by query windows in the API), not necessarily by a single SQL foreign key.
 
 ```mermaid
 erDiagram
@@ -83,8 +114,6 @@ erDiagram
     sensor_readings ||--|| external_readings : "Compared by Time (recorded_at)"
 ```
 
-
-
 ---
 
 ## Architecture & Data Flow
@@ -123,13 +152,13 @@ graph LR
     Calc == "REST API" ==> UI
 ```
 
-
-
 ---
 
 ## Quick Start
 
-You can run everything with **Docker** (simplest, matches deployment) or run the **backend and frontend directly** on your machine (good for debugging and faster UI reloads).
+**GitHub:** [https://github.com/smart-air-quality/smart-air-quality-system](https://github.com/smart-air-quality/smart-air-quality-system) — **License:** [MIT](LICENSE).
+
+You can run everything with **Docker** (simplest, matches deployment) or run the **backend and frontend directly** on your machine (good for debugging and faster UI reloads). With the backend running, API docs are at `http://localhost:8000/docs`.
 
 ### Option A: Docker
 
@@ -166,7 +195,7 @@ Since the database is hosted on the KU server, you need to create the tables fir
 docker-compose exec backend alembic upgrade head
 ```
 
-*(Optional)* To test the dashboard immediately without waiting for new hardware data, we have provided an exported dataset containing 3 days of real sensor readings.
+_(Optional)_ To test the dashboard immediately without waiting for new hardware data, we have provided an exported dataset containing 3 days of real sensor readings.
 
 **How to import the collected data:**
 
@@ -187,7 +216,7 @@ docker-compose exec backend alembic upgrade head
 docker-compose down
 ```
 
-*(Add `-v` at the end if you want to completely wipe the database and start fresh).*
+_(Add `-v` at the end if you want to completely wipe the database and start fresh)._
 
 ---
 
@@ -267,4 +296,3 @@ More detail for the API lives in [backend/README.md](backend/README.md); fronten
 - **Backend:** Python, FastAPI, SQLAlchemy, PyMySQL, Paho-MQTT
 - **Frontend:** React, Next.js, Tailwind CSS, Recharts
 - **Infrastructure:** Docker, MySQL 8
-

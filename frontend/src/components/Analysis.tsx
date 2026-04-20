@@ -31,10 +31,34 @@ interface AnalysisProps {
   history: HistoryRecord[];
 }
 
+/** Forecast horizon in hours (linear extrapolation from latest PM2.5 using slope). */
+type ForecastHorizon = 1 | 24 | 72;
+
+function predictedPm25ForHorizon(
+  trends: DashboardResponse["trends"],
+  horizon: ForecastHorizon,
+): number | null {
+  if (!trends) return null;
+  const fromApi =
+    horizon === 1
+      ? (trends.predicted_pm2_5_1h ?? trends.predicted_pm25_1h)
+      : horizon === 24
+        ? trends.predicted_pm25_24h
+        : trends.predicted_pm25_72h;
+  if (fromApi != null && Number.isFinite(fromApi)) return fromApi;
+  const cur = trends.current_pm25;
+  const slope = trends.slope_per_hour;
+  if (cur != null && slope != null && Number.isFinite(cur) && Number.isFinite(slope)) {
+    return Math.max(0, Number((cur + slope * horizon).toFixed(1)));
+  }
+  return null;
+}
+
 export function Analysis({ dashboard, history }: AnalysisProps) {
   const [showCitiesList, setShowCitiesList] = useState(false);
   const [showTrendInfo, setShowTrendInfo] = useState(false);
   const [showAwarenessInfo, setShowAwarenessInfo] = useState(false);
+  const [forecastHorizon, setForecastHorizon] = useState<ForecastHorizon>(1);
 
   const localAqi = dashboard.local_aqi?.aqi ?? 0;
   const cityAqi = dashboard.comparison?.city_aqi ?? 0;
@@ -73,27 +97,51 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
         }),
         fullTime: date.toLocaleString(),
         isForecast: false,
+        isForecastEnd: false,
         Actual: d.pm25,
         Trend: Math.max(0, Number(trendVal.toFixed(1))),
       };
     });
 
-    const futureTs = latestTs + 60 * 60 * 1000; // +1 hour
-    const futureTrendVal = lastVal + slopePerHour;
-    chartData.push({
-      time:
-        new Date(futureTs).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }) + " +1h",
-      fullTime: `${new Date(futureTs).toLocaleString()} — 1-hour linear forecast`,
-      isForecast: true,
-      Actual: undefined,
-      Trend: Math.max(0, Number(futureTrendVal.toFixed(1))),
-    });
+    const nSteps = forecastHorizon === 1 ? 1 : forecastHorizon === 24 ? 4 : 6;
+    for (let i = 1; i <= nSteps; i++) {
+      const hoursAhead = (forecastHorizon * i) / nSteps;
+      const futureTs = latestTs + hoursAhead * 60 * 60 * 1000;
+      const futureTrendVal = lastVal + slopePerHour * hoursAhead;
+      const date = new Date(futureTs);
+      const timeShort = date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const timeLabel =
+        forecastHorizon === 1
+          ? `${timeShort} +1h`
+          : date.toLocaleString([], {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+      chartData.push({
+        time: timeLabel,
+        fullTime: `${date.toLocaleString()} — linear forecast (+${hoursAhead}h from last reading)`,
+        isForecast: true,
+        isForecastEnd: i === nSteps,
+        Actual: undefined,
+        Trend: Math.max(0, Number(futureTrendVal.toFixed(1))),
+      });
+    }
 
     return chartData;
-  }, [history, dashboard.trends]);
+  }, [history, dashboard.trends, forecastHorizon]);
+
+  const displayedPrediction = useMemo(
+    () => predictedPm25ForHorizon(dashboard.trends, forecastHorizon),
+    [dashboard.trends, forecastHorizon],
+  );
+
+  const predLabel =
+    forecastHorizon === 1 ? "Pred. +1h" : forecastHorizon === 24 ? "Pred. +1 day" : "Pred. +3 days";
 
   const trendLabel = (dashboard.trends?.trend ?? "-").toLowerCase();
   const trendBadgeClass =
@@ -103,8 +151,12 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
         ? "bg-emerald-50 text-emerald-800 border-emerald-200"
         : "bg-gray-100 text-gray-800 border-gray-200";
 
-  const boundaryTime =
-    trendChartData.length >= 2 ? trendChartData[trendChartData.length - 2]?.time : undefined;
+  const boundaryTime = useMemo(() => {
+    for (let i = trendChartData.length - 1; i >= 0; i--) {
+      if (trendChartData[i]?.isForecast === false) return trendChartData[i]?.time;
+    }
+    return undefined;
+  }, [trendChartData]);
 
   return (
     <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -199,8 +251,30 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
       <article className="bg-white border-2 border-gray-900/20 rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.2)] hover:-translate-y-1 transition-all duration-300 flex flex-col lg:min-h-[520px]">
         <h3 className="text-lg font-semibold text-gray-900 border-b border-gray-100 pb-4 mb-4 flex items-center">
           Trend Analysis
-          <InfoTooltip text="Blue: measured PM2.5 (last ~6h). Red dashed: linear regression through the latest point, extended 1h ahead. Slope comes from the backend trend model." />
+          <InfoTooltip text="Blue: measured PM2.5 (last ~6h). Red dashed: same linear slope as the backend, extended by your choice (+1h, +1 day, +3 days). Long horizons are extrapolations only—not a weather forecast." />
         </h3>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {(
+            [
+              { h: 1 as const, label: "+1 hour" },
+              { h: 24 as const, label: "+1 day" },
+              { h: 72 as const, label: "+3 days" },
+            ] as const
+          ).map(({ h, label }) => (
+            <button
+              key={h}
+              type="button"
+              onClick={() => setForecastHorizon(h)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors ${
+                forecastHorizon === h
+                  ? "border-gray-900 bg-gray-900 text-white"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600 mb-2">
           <div className="flex sm:flex-col sm:items-start justify-between sm:justify-start gap-1 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2">
             <span className="font-medium text-gray-500 shrink-0">Trend (6h)</span>
@@ -215,13 +289,9 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
             </span>
           </div>
           <div className="flex sm:flex-col sm:items-start justify-between sm:justify-start gap-1 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 sm:col-span-1">
-            <span className="font-medium text-gray-500 shrink-0">Pred. +1h</span>
+            <span className="font-medium text-gray-500 shrink-0">{predLabel}</span>
             <span className="font-semibold tabular-nums text-lg text-gray-900 leading-tight">
-              {numberOrDash(
-                dashboard.trends?.predicted_pm2_5_1h ??
-                  dashboard.trends?.predicted_pm25_1h,
-                " µg/m³",
-              )}
+              {numberOrDash(displayedPrediction ?? undefined, " µg/m³")}
             </span>
           </div>
         </div>
@@ -325,17 +395,17 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
                 <Line
                   type="monotone"
                   dataKey="Trend"
-                  name="Linear fit & +1h"
+                  name="Linear extrapolation"
                   stroke="#dc2626"
                   strokeWidth={2}
                   strokeDasharray="6 5"
                   dot={(props: {
                     cx?: number;
                     cy?: number;
-                    payload?: { isForecast?: boolean };
+                    payload?: { isForecastEnd?: boolean };
                   }) => {
                     const { cx, cy, payload } = props;
-                    if (cx == null || cy == null || !payload?.isForecast) return null;
+                    if (cx == null || cy == null || !payload?.isForecastEnd) return null;
                     return (
                       <circle cx={cx} cy={cy} r={5} fill="#dc2626" stroke="#fff" strokeWidth={2} />
                     );

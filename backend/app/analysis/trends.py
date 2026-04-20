@@ -72,6 +72,8 @@ def analyze(history: list[dict], hours: int = 6) -> dict:
 
     last_val = values[-1]
     predicted_1h = round(max(0.0, last_val + slope), 1)
+    predicted_24h = round(max(0.0, last_val + slope * 24), 1)
+    predicted_72h = round(max(0.0, last_val + slope * 72), 1)
 
     return {
         "trend":             trend,
@@ -81,6 +83,8 @@ def analyze(history: list[dict], hours: int = 6) -> dict:
         "min_pm25":          round(min(values), 1),
         "max_pm25":          round(max(values), 1),
         "predicted_pm25_1h": predicted_1h,
+        "predicted_pm25_24h": predicted_24h,
+        "predicted_pm25_72h": predicted_72h,
         "data_points":       len(points),
         "window_hours":      hours,
     }
@@ -91,5 +95,8 @@ def _empty() -> dict:
         "trend": "unknown", "slope_per_hour": 0.0,
         "current_pm25": None, "avg_pm25": None,
         "min_pm25": None, "max_pm25": None,
-        "predicted_pm25_1h": None, "data_points": 0, "window_hours": 0,
+        "predicted_pm25_1h": None,
+        "predicted_pm25_24h": None,
+        "predicted_pm25_72h": None,
+        "data_points": 0, "window_hours": 0,
     }

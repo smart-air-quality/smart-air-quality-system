@@ -43,6 +43,8 @@ export type DashboardResponse = {
     trend?: string;
     predicted_pm2_5_1h?: number;
     predicted_pm25_1h?: number;
+    predicted_pm25_24h?: number;
+    predicted_pm25_72h?: number;
     current_pm25?: number;
     slope_per_hour?: number;
   };
