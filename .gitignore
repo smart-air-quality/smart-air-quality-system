@@ -7,7 +7,6 @@ __pycache__/
 *.pyc
 .env
 backend/.env
-data/
 backend/data/
 backend/plans
 .DS_Store
