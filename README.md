@@ -1,226 +1,132 @@
 # Smart Air Quality Monitor
 
-End-to-end IoT air-quality monitoring: sensors over MQTT, FastAPI + MySQL, external WAQI/weather data, analytics, and a Next.js dashboard.
-
----
-
-## Project overview
-
-The **Smart Air Quality Monitor** integrates a KidBright32-based sensor node (PM, temperature, humidity, CO), a Python **FastAPI** backend that persists readings to **MySQL** and pulls secondary data (WAQI, weather), and a **Next.js** dashboard for live and historical visualization, comparisons, trend extrapolation, alerts, and an awareness score.
+IoT air-quality stack: **KidBright32** sensors → **MQTT** → **FastAPI** + **MySQL** → external **WAQI / weather** APIs → **Next.js** dashboard (live data, comparisons, trends, alerts).
 
 ---
 
 ## Team
 
-
-| Name                 | Student ID | Affiliation (department, faculty, university)                                    |
+| Name                 | Student ID | Affiliation                                                                      |
 | -------------------- | ---------- | -------------------------------------------------------------------------------- |
 | Thapanan Suwansukhum | 6710545555 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
 | Bhumipat Kusalatham  | 6710545831 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
 
+---
+
+## Overview
+
+The backend stores sensor readings, merges **WAQI** and **weather** snapshots, runs **AQI**, **linear-regression trends** (6h window, optional longer extrapolation in the UI), **alerts**, and an **awareness score**. The frontend polls the bundled **`/api/v1/dashboard`** endpoint.
 
 ---
 
 ## Features
 
-- **Real-time IoT ingestion:** PM1.0, PM2.5, PM10, temperature, humidity, and CO via MQTT.
-- **Global comparison:** Local readings vs city-level and sampled global cities (WAQI-backed).
-- **Analytics:** US EPA–style local AQI, linear-regression trend (6h window), optional forecast horizons (+1h / +1 day / +3 days in the UI), intelligent alerts.
-- **Dashboard:** Next.js + Tailwind + Recharts; auto-refresh, historical line charts with collapsible summaries, tooltips, stale-sensor warning.
+- **Ingestion:** PM1.0 / PM2.5 / PM10, temperature, humidity, CO over MQTT.
+- **Comparison:** Local vs city and sampled global cities (WAQI).
+- **Analytics:** EPA-style local AQI, trend + optional horizons (+1h / +1d / +3d in UI), rule-based alerts.
+- **UI:** Next.js, Tailwind, Recharts; auto-refresh, historical charts with collapsible stats, tooltips, stale-sensor hint.
 
 ---
 
-## Requirements (libraries & tools)
+## Requirements
 
-Versions below match the **Dockerfile** / `package.json` / `requirements.txt` in this repo; slightly newer patch versions are usually fine.
+| Tool               | Notes                                                       |
+| ------------------ | ----------------------------------------------------------- |
+| **Python**         | **3.11** in Docker; **3.10+** for local venv.               |
+| **Node.js**        | **20+** (Next.js 16).                                       |
+| **npm**            | 10+ (with Node 20).                                         |
+| **Docker Compose** | v3.8 file in repo root.                                     |
+| **MySQL**          | **8.x** (e.g. KU `iot.cpe.ku.ac.th` or any reachable host). |
 
-
-| Tool                        | Version / notes                                                           |
-| --------------------------- | ------------------------------------------------------------------------- |
-| **Python**                  | **3.11** (backend Docker image); **3.10+** supported for local venv.      |
-| **Node.js**                 | **20+** (for Next.js 16 frontend; LTS recommended).                       |
-| **npm**                     | 10+ (ships with Node 20).                                                 |
-| **Docker & Docker Compose** | For [Quick Start — Option A](#option-a-docker) (Compose file v3.8).       |
-| **MySQL**                   | **8.x** (hosted e.g. on KU `iot.cpe.ku.ac.th` or any reachable instance). |
-
-
-**Backend (pip):** see `[backend/requirements.txt](backend/requirements.txt)` — includes FastAPI 0.115.x, Uvicorn, SQLAlchemy 2.x, PyMySQL, Paho-MQTT, Alembic, HTTPX, Pydantic v2, etc.
-
-**Frontend (npm):** see `[frontend/package.json](frontend/package.json)` — includes Next.js **16.2.x**, React **19.x**, Tailwind **4.x**, Recharts **3.x**, TypeScript **5.x**.
-
-**IoT (device):** MicroPython on ESP32 / KidBright32; see `[iot/](iot/)` for drivers and config.
+- **Backend deps:** [`backend/requirements.txt`](backend/requirements.txt) (FastAPI, Uvicorn, SQLAlchemy, PyMySQL, Paho-MQTT, Alembic, HTTPX, Pydantic v2, …).
+- **Frontend deps:** [`frontend/package.json`](frontend/package.json) (Next 16.2.x, React 19.x, Tailwind 4.x, Recharts 3.x, TypeScript 5.x).
+- **Device:** MicroPython on ESP32 / KidBright32 — [`iot/`](iot/).
 
 ---
 
 ## Quick Start
 
-You can run everything with **Docker** (simplest, matches deployment) or run the **backend and frontend directly** on your machine (good for debugging and faster UI reloads). With the backend running, API docs are at `http://localhost:8000/docs`.
+Use **Docker** (Option A) or **local** Python + Node (Option B). Create an empty MySQL **database** on the server first; credentials go in `.env` / `backend/.env`.
 
 ### Option A: Docker
 
-This project is fully containerized and configured to connect to the KU database server (`iot.cpe.ku.ac.th`) out of the box to fulfill Requirement 1.2.
+1. **Clone & env**
 
-#### A.1. Setup environment
+   ```bash
+   git clone https://github.com/smart-air-quality/smart-air-quality-system.git
+   cd smart-air-quality-system
+   cp .env.example .env          # macOS / Linux
+   copy .env.example .env       # Windows CMD
+   ```
 
-First, clone the repository and set up your database credentials:
+   Edit `.env`: set `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` (and host if not default).
 
-```bash
-git clone https://github.com/smart-air-quality/smart-air-quality-system.git
-cd smart-air-quality-system
+2. **Run**
 
-# Create your environment file (macOS/Linux)
-cp .env.example .env
+   ```bash
+   docker-compose up -d --build
+   ```
 
-# Create your environment file (Windows Command Prompt)
-copy .env.example .env
-```
+3. **Tables** — On startup the backend calls SQLAlchemy **`create_all()`**, which usually creates tables on an **empty** schema. **Recommended:** run migrations so the DB matches `alembic/versions/`:
 
-**Important:** Open the `.env` file and enter your KU database username, password, and database name.
+   ```bash
+   docker-compose exec backend alembic upgrade head
+   ```
 
-#### A.2. Start services
+4. **(Optional) Demo SQL** — Import [`data/export/collected_data.sql`](data/export/collected_data.sql) via [phpMyAdmin](https://iot.cpe.ku.ac.th/pma/) (Import → choose file → Go). See [`data/export/README.md`](data/export/README.md) if present.
 
-```bash
-docker-compose up -d --build
-```
+5. **URLs** — App [http://localhost:3000](http://localhost:3000) · Swagger [http://localhost:8000/docs](http://localhost:8000/docs)
 
-#### A.3. Database tables (what happens automatically)
+**Stop:** `docker-compose down` (add `-v` only if you intend to remove named volumes you added yourself).
 
-When the **backend** container starts, FastAPI runs `init_db()` once, which calls SQLAlchemy `**Base.metadata.create_all()`**. On an **empty** MySQL schema (with a valid database already created on the server), that usually **creates the core tables from the ORM models**—so `**docker compose up` alone is often enough** to get a working schema.
+### Option B: Without Docker
 
-**Recommended (first run or after pulling new migrations):** apply the **Alembic** chain so the database matches `alembic/versions/` and stays aligned with how the team evolves the schema:
-
-```bash
-docker-compose exec backend alembic upgrade head
-```
-
-You can skip Alembic if `create_all` already gave you a working DB; run it when you want explicit migration history or when a new migration is added.
-
-#### A.4. (Optional) Seed / demo data
-
-To test the dashboard immediately without waiting for new hardware data, we provide an exported dataset (about 3 days of real sensor readings).
-
-**How to import the collected data:**
-
-1. Go to **[https://iot.cpe.ku.ac.th/pma/](https://iot.cpe.ku.ac.th/pma/)** and log in.
-2. Click on the **Import** tab at the top.
-3. Upload the file located at `data/export/collected_data.sql` from this repository.
-4. Click **Go** to import the data.
-
-#### A.5. Access the app
-
-- **Web Dashboard:** [http://localhost:3000](http://localhost:3000)
-- **API Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-
-#### Stopping Docker services
+From repo root after clone:
 
 ```bash
-docker-compose down
-```
-
-*(Add `-v` at the end if you want to completely wipe the database and start fresh).*
-
----
-
-### Option B: Without Docker (local backend + frontend)
-
-Use this when you prefer a local Python venv and `npm run dev`, or when Docker is not available.
-
-**Prerequisites:** Python 3.10+ (3.11+ recommended), Node.js 20+, and a reachable MySQL database (KU host or local MySQL) with credentials ready.
-
-#### B.1. Clone and backend environment
-
-```bash
-git clone https://github.com/smart-air-quality/smart-air-quality-system.git
-cd smart-air-quality-system/backend
-
-# macOS / Linux
-cp .env.example .env
-
-# Windows Command Prompt
-copy .env.example .env
-```
-
-Edit `backend/.env`: set `MYSQL_*` (or `DATABASE_URL`), `WAQI_TOKEN`, `WEATHERAPI_KEY`, and optional `LOCATION_*` as needed. Demo API keys still work with fallback data.
-
-#### B.2. Backend (virtualenv + migrations + server)
-
-**macOS / Linux:**
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
+cd backend
+cp .env.example .env    # edit MYSQL_*, API keys
+python3 -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 alembic upgrade head
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Windows:**
+Second terminal (repo root → `frontend/`):
 
 ```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+cp .env.example .env.local   # set NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 if needed
+npm install && npm run dev
 ```
 
-- API: [http://localhost:8000](http://localhost:8000)
-- Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-Keep this terminal open. Optional seed data: import `data/export/collected_data.sql` via phpMyAdmin the same way as in Option A.
-
-#### B.3. Frontend (second terminal)
-
-In another terminal, go to the **repository root** (`smart-air-quality-system/`, i.e. the folder that contains `backend/` and `frontend/`). If you are still inside `backend/`, run `cd ..` first. Then:
-
-```bash
-cd frontend
-cp .env.example .env.local
-```
-
-Ensure `NEXT_PUBLIC_API_BASE_URL` in `.env.local` points at your backend (default `http://localhost:8000`). Then:
-
-```bash
-npm install
-npm run dev
-```
-
-- Dashboard: [http://localhost:3000](http://localhost:3000)
-
-More detail for the API lives in [backend/README.md](backend/README.md); frontend env vars are described in [frontend/README.md](frontend/README.md).
+More: [`backend/README.md`](backend/README.md), [`frontend/README.md`](frontend/README.md).
 
 ---
 
-## Hardware Components
+## Hardware
 
-
-| Component       | Function                                         | Interface         |
-| --------------- | ------------------------------------------------ | ----------------- |
-| **KidBright32** | Main Microcontroller (ESP32-based)               | WiFi / I2C / UART |
-| **PMS7003**     | Measures Particulate Matter (PM1.0, PM2.5, PM10) | UART              |
-| **KY-015**      | Measures Ambient Temperature & Humidity          | Digital Pin       |
-| **MQ-9**        | Measures Carbon Monoxide (CO) Gas Concentration  | Analog Pin        |
-
+| Part            | Role                   | Bus               |
+| --------------- | ---------------------- | ----------------- |
+| **KidBright32** | MCU (ESP32-class)      | WiFi / I²C / UART |
+| **PMS7003**     | PM1 / PM2.5 / PM10     | UART              |
+| **KY-015**      | Temperature & humidity | Digital           |
+| **MQ-9**        | CO (and related gases) | Analog            |
 
 ---
 
-## Trend Prediction Logic
+## Trend logic (6h PM2.5 regression)
 
-The system uses **Linear Regression** on the last 6 hours of PM2.5 data to calculate the slope (rate of change per hour) and predict future air quality.
-
-
-| Calculated Slope (µg/m³/hr) | Trend Status  | Prediction Logic (Next 1 Hour)                                      |
-| --------------------------- | ------------- | ------------------------------------------------------------------- |
-| **Slope > +1.5**            | **Worsening** | `Predicted = Current PM2.5 + Slope` (Air pollution is rising)       |
-| **Slope < -1.5**            | **Improving** | `Predicted = Current PM2.5 + Slope` (Air quality is getting better) |
-| **-1.5 ≤ Slope ≤ +1.5**     | **Stable**    | `Predicted ≈ Current PM2.5` (No significant changes expected)       |
-
+| Slope (µg/m³ per h) | Label     | Next-step idea              |
+| ------------------- | --------- | --------------------------- |
+| **> +1.5**          | Worsening | Predicted ≈ current + slope |
+| **< −1.5**          | Improving | Predicted ≈ current + slope |
+| **between**         | Stable    | Predicted ≈ current         |
 
 ---
 
-## Database Schema (Data Integration)
+## Database schema
 
-**Integration diagram (ER):** primary **sensor** readings vs secondary **external** snapshots, aligned in time for comparison on the dashboard. The system uses MySQL; rows are joined logically by `recorded_at` (and by query windows in the API), not necessarily by a single SQL foreign key.
+MySQL: **sensor** rows vs **external** snapshots; compared in time via `recorded_at` (logical alignment, not necessarily one FK).
 
 ```mermaid
 erDiagram
@@ -257,58 +163,43 @@ erDiagram
         int response_time_ms "API Response Time (ms)"
     }
 
-    %% Relationship: Data is integrated and compared based on the recorded timestamp
     sensor_readings ||--|| external_readings : "Compared by Time (recorded_at)"
 ```
 
-
-
 ---
 
-## Architecture & Data Flow
+## Architecture
 
 ```mermaid
 graph LR
-    %% Hardware
-    subgraph IoT [1. Hardware Sensors]
-        S1[PMS7003<br/>PM1.0, 2.5, 10]
-        S2[KY-015<br/>Temp, Humid]
-        S3[MQ-9<br/>CO Gas]
+    subgraph IoT [1. Sensors]
+        S1[PMS7003]
+        S2[KY-015]
+        S3[MQ-9]
     end
-
-    %% Backend
-    subgraph Backend [2. FastAPI Server]
-        MQTT[MQTT Subscriber]
+    subgraph Backend [2. FastAPI]
+        MQTT[MQTT]
         DB[(MySQL)]
-        API[External APIs<br/>WAQI, Weather]
-        Calc[Analytics Engine]
+        API[WAQI / Weather]
+        Calc[Analytics]
     end
-
-    %% Frontend
-    subgraph Frontend [3. Next.js Dashboard]
-        UI[Real-time UI]
+    subgraph FE [3. Next.js]
+        UI[Dashboard]
     end
-
-    %% Connections
-    S1 -->|MQTT 5s| MQTT
-    S2 -->|MQTT 5s| MQTT
-    S3 -->|MQTT 5s| MQTT
-
+    S1 -->|MQTT| MQTT
+    S2 -->|MQTT| MQTT
+    S3 -->|MQTT| MQTT
     MQTT --> DB
-    API -.->|Fetch 15m| DB
+    API -.->|~15m| DB
     DB --> Calc
-
-    Calc == "REST API" ==> UI
+    Calc == REST ==> UI
 ```
-
-
 
 ---
 
-## Tech Stack
+## Tech stack
 
-- **IoT:** KidBright32, PMS7003, KY-015, MQ-9
-- **Backend:** Python, FastAPI, SQLAlchemy, PyMySQL, Paho-MQTT
+- **Edge:** KidBright32, MicroPython, PMS7003, KY-015, MQ-9
+- **Backend:** Python, FastAPI, SQLAlchemy, PyMySQL, Paho-MQTT, Alembic
 - **Frontend:** React, Next.js, Tailwind CSS, Recharts
-- **Infrastructure:** Docker, MySQL 8
-
+- **Ops:** Docker Compose, MySQL 8
