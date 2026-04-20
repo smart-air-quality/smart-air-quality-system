@@ -12,10 +12,12 @@ The **Smart Air Quality Monitor** integrates a KidBright32-based sensor node (PM
 
 ## Team
 
+
 | Name                 | Student ID | Affiliation (department, faculty, university)                                    |
 | -------------------- | ---------- | -------------------------------------------------------------------------------- |
 | Thapanan Suwansukhum | 6710545555 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
 | Bhumipat Kusalatham  | 6710545831 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
+
 
 ---
 
@@ -32,6 +34,7 @@ The **Smart Air Quality Monitor** integrates a KidBright32-based sensor node (PM
 
 Versions below match the **Dockerfile** / `package.json` / `requirements.txt` in this repo; slightly newer patch versions are usually fine.
 
+
 | Tool                        | Version / notes                                                           |
 | --------------------------- | ------------------------------------------------------------------------- |
 | **Python**                  | **3.11** (backend Docker image); **3.10+** supported for local venv.      |
@@ -40,17 +43,16 @@ Versions below match the **Dockerfile** / `package.json` / `requirements.txt` in
 | **Docker & Docker Compose** | For [Quick Start — Option A](#option-a-docker) (Compose file v3.8).       |
 | **MySQL**                   | **8.x** (hosted e.g. on KU `iot.cpe.ku.ac.th` or any reachable instance). |
 
-**Backend (pip):** see [`backend/requirements.txt`](backend/requirements.txt) — includes FastAPI 0.115.x, Uvicorn, SQLAlchemy 2.x, PyMySQL, Paho-MQTT, Alembic, HTTPX, Pydantic v2, etc.
 
-**Frontend (npm):** see [`frontend/package.json`](frontend/package.json) — includes Next.js **16.2.x**, React **19.x**, Tailwind **4.x**, Recharts **3.x**, TypeScript **5.x**.
+**Backend (pip):** see `[backend/requirements.txt](backend/requirements.txt)` — includes FastAPI 0.115.x, Uvicorn, SQLAlchemy 2.x, PyMySQL, Paho-MQTT, Alembic, HTTPX, Pydantic v2, etc.
 
-**IoT (device):** MicroPython on ESP32 / KidBright32; see [`iot/`](iot/) for drivers and config.
+**Frontend (npm):** see `[frontend/package.json](frontend/package.json)` — includes Next.js **16.2.x**, React **19.x**, Tailwind **4.x**, Recharts **3.x**, TypeScript **5.x**.
+
+**IoT (device):** MicroPython on ESP32 / KidBright32; see `[iot/](iot/)` for drivers and config.
 
 ---
 
 ## Quick Start
-
-**GitHub:** [https://github.com/smart-air-quality/smart-air-quality-system](https://github.com/smart-air-quality/smart-air-quality-system) — **License:** [MIT](LICENSE).
 
 You can run everything with **Docker** (simplest, matches deployment) or run the **backend and frontend directly** on your machine (good for debugging and faster UI reloads). With the backend running, API docs are at `http://localhost:8000/docs`.
 
@@ -81,25 +83,30 @@ copy .env.example .env
 docker-compose up -d --build
 ```
 
-#### A.3. Initialize database (first run only)
+#### A.3. Database tables (what happens automatically)
 
-Since the database is hosted on the KU server, you need to create the tables first:
+When the **backend** container starts, FastAPI runs `init_db()` once, which calls SQLAlchemy `**Base.metadata.create_all()`**. On an **empty** MySQL schema (with a valid database already created on the server), that usually **creates the core tables from the ORM models**—so `**docker compose up` alone is often enough** to get a working schema.
+
+**Recommended (first run or after pulling new migrations):** apply the **Alembic** chain so the database matches `alembic/versions/` and stays aligned with how the team evolves the schema:
 
 ```bash
 docker-compose exec backend alembic upgrade head
 ```
 
-_(Optional)_ To test the dashboard immediately without waiting for new hardware data, we have provided an exported dataset containing 3 days of real sensor readings.
+You can skip Alembic if `create_all` already gave you a working DB; run it when you want explicit migration history or when a new migration is added.
+
+#### A.4. (Optional) Seed / demo data
+
+To test the dashboard immediately without waiting for new hardware data, we provide an exported dataset (about 3 days of real sensor readings).
 
 **How to import the collected data:**
 
 1. Go to **[https://iot.cpe.ku.ac.th/pma/](https://iot.cpe.ku.ac.th/pma/)** and log in.
-2. Select your database from the left panel.
-3. Click on the **Import** tab at the top.
-4. Upload the file located at `data/export/collected_data.sql` from this repository.
-5. Click **Go** to import the data.
+2. Click on the **Import** tab at the top.
+3. Upload the file located at `data/export/collected_data.sql` from this repository.
+4. Click **Go** to import the data.
 
-#### A.4. Access the app
+#### A.5. Access the app
 
 - **Web Dashboard:** [http://localhost:3000](http://localhost:3000)
 - **API Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -110,7 +117,7 @@ _(Optional)_ To test the dashboard immediately without waiting for new hardware 
 docker-compose down
 ```
 
-_(Add `-v` at the end if you want to completely wipe the database and start fresh)._
+*(Add `-v` at the end if you want to completely wipe the database and start fresh).*
 
 ---
 
@@ -186,6 +193,7 @@ More detail for the API lives in [backend/README.md](backend/README.md); fronten
 
 ## Hardware Components
 
+
 | Component       | Function                                         | Interface         |
 | --------------- | ------------------------------------------------ | ----------------- |
 | **KidBright32** | Main Microcontroller (ESP32-based)               | WiFi / I2C / UART |
@@ -193,17 +201,20 @@ More detail for the API lives in [backend/README.md](backend/README.md); fronten
 | **KY-015**      | Measures Ambient Temperature & Humidity          | Digital Pin       |
 | **MQ-9**        | Measures Carbon Monoxide (CO) Gas Concentration  | Analog Pin        |
 
+
 ---
 
 ## Trend Prediction Logic
 
 The system uses **Linear Regression** on the last 6 hours of PM2.5 data to calculate the slope (rate of change per hour) and predict future air quality.
 
+
 | Calculated Slope (µg/m³/hr) | Trend Status  | Prediction Logic (Next 1 Hour)                                      |
 | --------------------------- | ------------- | ------------------------------------------------------------------- |
 | **Slope > +1.5**            | **Worsening** | `Predicted = Current PM2.5 + Slope` (Air pollution is rising)       |
 | **Slope < -1.5**            | **Improving** | `Predicted = Current PM2.5 + Slope` (Air quality is getting better) |
 | **-1.5 ≤ Slope ≤ +1.5**     | **Stable**    | `Predicted ≈ Current PM2.5` (No significant changes expected)       |
+
 
 ---
 
@@ -250,6 +261,8 @@ erDiagram
     sensor_readings ||--|| external_readings : "Compared by Time (recorded_at)"
 ```
 
+
+
 ---
 
 ## Architecture & Data Flow
@@ -288,6 +301,8 @@ graph LR
     Calc == "REST API" ==> UI
 ```
 
+
+
 ---
 
 ## Tech Stack
@@ -296,3 +311,4 @@ graph LR
 - **Backend:** Python, FastAPI, SQLAlchemy, PyMySQL, Paho-MQTT
 - **Frontend:** React, Next.js, Tailwind CSS, Recharts
 - **Infrastructure:** Docker, MySQL 8
+
