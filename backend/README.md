@@ -1,11 +1,13 @@
 # Smart Air Quality Monitor – Backend API
 
-Backend service that receives real-time sensor data from KidBright32 via MQTT, processes it, and exposes a REST API for air quality monitoring and analysis.
+The backend service for the Smart Air Quality Monitor. It receives real-time sensor data from KidBright32 via MQTT, fetches external weather/AQI data, processes everything through an analytics engine, and exposes a REST API for the frontend dashboard.
+
+---
 
 ## System Architecture
 
-```
-[KidBright32]
+```text
+[Hardware Sensors]
   PMS7003 → PM1.0 / PM2.5 / PM10
   KY-015  → Temperature / Humidity
   MQ-9    → CO ppm
@@ -13,168 +15,116 @@ Backend service that receives real-time sensor data from KidBright32 via MQTT, p
       │  MQTT (broker.hivemq.com)
       │  Topic: air_quality/sensors
       ▼
-[Backend – FastAPI]
-  MQTT Subscriber → receives sensor data
-  AQI Calculation → US EPA standard
-  WAQI API        → city AQI (real-time)
-  WeatherAPI.com  → weather data
-  Analysis        → alerts / trends / comparison
+[FastAPI Backend]
+  MQTT Subscriber → Receives & validates sensor data
+  Background Job  → Fetches WAQI & WeatherAPI data (Every 15m)
+  Database        → Persists data to MySQL
+  Analytics       → Calculates AQI, Trends, Alerts, & Awareness
       │
       │  REST API
       ▼
 GET /api/v1/dashboard
 ```
 
-## Quick Start
+---
 
-Run everything from this directory (`backend/`). From the repository root:
+## Quick Start (Local Development)
 
-```bash
-cd backend
-```
+If you want to run the backend locally without Docker (e.g., for development or debugging):
 
-### 1. Create virtual environment
-#### macOS / Linux:
+### 1. Create a Virtual Environment
+
+**macOS / Linux:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-#### Windows:
+**Windows:**
 ```bash
 python -m venv venv
 venv\Scripts\activate
 ```
 
-
-### 2. Install dependencies
+### 2. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment
-#### macOS / Linux:
+### 3. Configure Environment
 ```bash
 cp .env.example .env
-# Edit .env – set WAQI_TOKEN and WEATHERAPI_KEY (use "demo" if you don't have keys yet)
 ```
+Edit the `.env` file to set your database connection and API keys. If you don't have API keys, leaving them as `demo` will use fallback data.
 
-#### Windows:
-```bash
-copy .env.example .env 
-# Edit .env – set WAQI_TOKEN and WEATHERAPI_KEY (use "demo" if you don't have keys yet)
-```
-
-### 4. Run the server (for stable operation / demonstration)
-```bash
-# Recommended for demos (single process, no auto-reload — avoids duplicate MQTT workers):
-./scripts/run_demo.sh
-
-# Or manually:
-uvicorn main:app
-
-# Development only (auto-reload may spawn duplicate MQTT subscribers):
-uvicorn main:app --reload
-```
-
-API available at **http://localhost:8000**  
-Swagger UI: **http://localhost:8000/docs**
-
-### 5. Database migrations (Alembic)
-
-With `.env` / `DATABASE_URL` configured:
-
+### 4. Run Database Migrations
+Ensure your MySQL database is running, then apply the schema:
 ```bash
 alembic upgrade head
 ```
 
-Baseline revision: `alembic/versions/001_initial_schema.py` (creates `sensor_readings`, `external_readings`).  
-Startup runs `init_db()` to create tables if they don't exist; use Alembic for versioned schema changes in production.
-
-### 6. Tests
-
+### 5. Start the Server
 ```bash
-pip install -r requirements.txt
-pytest
+# Development mode (auto-reload enabled)
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 7. Seed demo data (optional)
+- **API Base URL:** `http://localhost:8000`
+- **Swagger Interactive Docs:** `http://localhost:8000/docs`
 
-When hardware is offline, insert synthetic history:
-
-```bash
-python scripts/seed_demo_data.py
-```
+---
 
 ## API Endpoints
 
+All stable endpoints are versioned under `/api/v1/`.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/` | Health check + KidBright connection status |
-| GET | `/api/v1/health` | DB + MQTT + external collector readiness |
-| GET | `/api/v1/sensors/current` | Latest reading from KidBright |
-| GET | `/api/v1/aqi/local` | AQI calculated from sensor data |
-| GET | `/api/v1/aqi/city` | City AQI from WAQI API |
-| GET | `/api/v1/weather` | Current weather from WeatherAPI.com |
+| GET | `/api/v1/` | Health check & basic service info |
+| GET | `/api/v1/health` | Deep readiness check (DB, MQTT, External Collector) |
+| GET | `/api/v1/sensors/current` | Latest raw reading from KidBright sensors |
+| GET | `/api/v1/aqi/local` | Local AQI calculated from sensor PM2.5 & PM10 |
+| GET | `/api/v1/aqi/city` | City AQI (from DB snapshot or WAQI API) |
+| GET | `/api/v1/weather` | Current weather (from DB snapshot or WeatherAPI.com) |
 | GET | `/api/v1/alerts` | Intelligent alerts with health recommendations |
-| GET | `/api/v1/comparison` | Local vs city vs global AQI comparison |
+| GET | `/api/v1/comparison` | Local vs City vs Global AQI comparison & percentile |
 | GET | `/api/v1/trends` | Trend analysis and 1-hour PM2.5 prediction |
 | GET | `/api/v1/history` | Historical sensor readings |
-| GET | `/api/v1/dashboard` | All data in a single response (includes `awareness`) |
-| GET | `/api/v1/external/snapshots` | Secondary WAQI + weather rows in a time window |
+| GET | `/api/v1/external/snapshots`| Historical secondary data (WAQI + Weather) |
+| **GET** | **`/api/v1/dashboard`** | **All data bundled in a single response (Used by Frontend)** |
+
+---
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WAQI_TOKEN` | `demo` | Token from https://aqicn.org/data-platform/token/ |
-| `WEATHERAPI_KEY` | `demo` | API key from https://www.weatherapi.com/ (optional legacy: `OWM_API_KEY`) |
+| `WEATHERAPI_KEY` | `demo` | API key from https://www.weatherapi.com/ |
 | `LOCATION_CITY` | `Bangkok` | City used for external data queries |
 | `HOST` | `0.0.0.0` | Server host |
 | `PORT` | `8000` | Server port |
-| `DATABASE_URL` | MySQL URL below | SQLAlchemy database URL (optional if `MYSQL_*` set) |
-| `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE` | — | Build URL safely when user/password contain `@` |
+| `MYSQL_USER` | `root` | MySQL Username |
+| `MYSQL_PASSWORD` | `rootpassword` | MySQL Password |
+| `MYSQL_HOST` | `localhost` | MySQL Host address |
+| `MYSQL_PORT` | `3306` | MySQL Port |
+| `MYSQL_DATABASE` | `smart_air_quality` | MySQL Database name |
 
-## Data storage
+*Note: You can also use a single `DATABASE_URL` string, but using the split `MYSQL_*` variables is recommended to avoid parsing issues with special characters in passwords.*
 
-Readings are stored in **MySQL** by default via SQLAlchemy + **PyMySQL** (`sensor_readings` table). Tables are created on startup (`init_db()`).
-
-**1. Create database (MySQL client or GUI):**
-```sql
-CREATE DATABASE smart_air_quality CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-**2. Configure `.env`** (same MySQL server as **phpMyAdmin** on `iot.cpe.ku.ac.th`; port is usually **3306**).
-
-Prefer **split variables** if your username looks like an email (`…@ku.th`) or your password contains `@` — a single `DATABASE_URL` treats `@` as the separator before the hostname, which leads to errors such as connecting to host `ku.th@iot.cpe.ku.ac.th`:
-
-```
-MYSQL_USER=…
-MYSQL_PASSWORD=…
-MYSQL_HOST=iot.cpe.ku.ac.th
-MYSQL_PORT=3306
-MYSQL_DATABASE=…
-```
-
-If user and password have no special characters, you can use one line instead (encode `@`, `#`, `/`, spaces if needed):
-
-```
-DATABASE_URL=mysql+pymysql://USER:PASSWORD@iot.cpe.ku.ac.th:3306/DATABASE_NAME
-```
-
-Off-campus you may need **VPN** or MySQL allowed for your IP—ask the server admin if connection is refused.
-
-**3. Default in code** (no `.env`): local MySQL `root` with empty password on `127.0.0.1`.
+---
 
 ## MQTT Configuration
 
+The backend connects to a public MQTT broker to receive data from the IoT device.
+
 | Setting | Value |
 |---------|-------|
-| Broker | `broker.hivemq.com` |
-| Port | `1883` |
-| Topic | `air_quality/sensors` |
+| **Broker** | `broker.hivemq.com` |
+| **Port** | `1883` |
+| **Topic** | `air_quality/sensors` |
 
-**Expected payload from KidBright:**
+**Expected JSON Payload from KidBright:**
 ```json
 {
   "device": "kidbright32",
@@ -194,46 +144,41 @@ Off-campus you may need **VPN** or MySQL allowed for your IP—ask the server ad
 }
 ```
 
+---
+
 ## Project Structure
 
+```text
+backend/
+├── main.py                  # FastAPI Application Entry Point
+├── requirements.txt         # Python Dependencies
+├── .env.example             # Environment Variables Template
+├── alembic.ini              # Database Migration Config
+├── alembic/                 # Migration Scripts
+└── app/
+    ├── core/
+    │   └── config.py        # Pydantic Settings Management
+    ├── database/
+    │   ├── models.py        # SQLAlchemy ORM Models
+    │   └── session.py       # DB Engine & Session Config
+    ├── services/
+    │   ├── readings_store.py   # Primary Sensor Data CRUD
+    │   └── external_store.py   # Secondary API Data CRUD
+    ├── mqtt/
+    │   ├── client.py        # Paho-MQTT Subscriber
+    │   └── deadletter.py    # Invalid Payload Logger
+    ├── analysis/
+    │   ├── aqi.py           # US EPA AQI Calculation
+    │   ├── alerts.py        # Alert Generation Logic
+    │   ├── trends.py        # Linear Regression Trend Prediction
+    │   └── comparison.py    # Global Ranking & Awareness Score
+    ├── external/
+    │   ├── waqi.py          # WAQI API Client
+    │   ├── openweather.py   # WeatherAPI.com Client
+    │   ├── collector.py     # Background Job (Every 15m)
+    │   └── snapshot.py      # Cache/Fallback Manager
+    ├── schemas/
+    │   └── ingest.py        # Pydantic Validation for MQTT
+    └── api/
+        └── routes.py        # FastAPI Route Definitions
 ```
-<repo-root>/
-└── backend/
-    ├── main.py                  # Entry point
-    ├── requirements.txt
-    ├── .env.example
-    ├── design_plan.md          # (optional docs)
-    ├── task.md
-    └── app/
-        ├── core/
-        │   └── config.py        # Settings (loaded from .env)
-        ├── database/
-        │   ├── models.py        # ORM models (SensorReading, ExternalReading)
-        │   └── session.py       # SQLAlchemy engine, SessionLocal, init_db
-        ├── services/
-        │   ├── readings_store.py   # Insert / query sensor readings
-        │   └── external_store.py   # WAQI + weather snapshots in DB
-        ├── mqtt/
-        │   ├── client.py        # MQTT subscriber (KidBright → DB + in-memory latest)
-        │   └── deadletter.py    # Log rejected MQTT payloads (optional file path)
-        ├── analysis/
-        │   ├── aqi.py           # AQI calculation (US EPA standard)
-        │   ├── alerts.py        # Intelligent alert generation
-        │   ├── trends.py        # Trend analysis and prediction
-        │   └── comparison.py    # Local vs city vs global comparison
-        ├── external/
-        │   ├── waqi.py          # World Air Quality Index API client
-        │   ├── openweather.py   # WeatherAPI.com client (module name unchanged)
-        │   ├── collector.py     # Periodic WAQI + weather → DB
-        │   └── snapshot.py      # Prefer fresh DB snapshots; else live APIs
-        ├── schemas/
-        │   └── ingest.py        # MQTT payload validation (Pydantic)
-        └── api/
-            └── routes.py        # REST API route definitions
-```
-
-Imports: `from app.core.config import settings`, `from app.database import engine, init_db`, `from app.services import readings_store`, `from app.mqtt import client as mqtt_client` (see source for details).
-
-## Related Repositories
-
-- **IoT (KidBright firmware):** https://github.com/smart-air-quality/smart-air-quality-iot

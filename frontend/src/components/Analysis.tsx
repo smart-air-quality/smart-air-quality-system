@@ -1,7 +1,17 @@
 import { useState, useMemo } from "react";
 import { DashboardResponse, HistoryRecord } from "@/types/dashboard";
-import { alertRecommendationText, numberOrDash, severityColorClass } from "@/lib/utils";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Activity } from "lucide-react";
+import {
+  alertRecommendationText,
+  numberOrDash,
+  severityColorClass,
+} from "@/lib/utils";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+} from "lucide-react";
 import { InfoTooltip } from "./InfoTooltip";
 import {
   LineChart,
@@ -36,7 +46,7 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
       .sort((a, b) => a.ts - b.ts);
 
     if (raw.length === 0) return [];
-    
+
     const latestRecordTs = raw[raw.length - 1].ts;
     const sixHoursAgo = latestRecordTs - 6 * 60 * 60 * 1000;
     const filtered = raw.filter((d) => d.ts >= sixHoursAgo);
@@ -44,14 +54,18 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
     if (filtered.length === 0) return [];
 
     const latestTs = filtered[filtered.length - 1].ts;
-    const lastVal = dashboard.trends?.current_pm25 ?? filtered[filtered.length - 1].pm25!;
+    const lastVal =
+      dashboard.trends?.current_pm25 ?? filtered[filtered.length - 1].pm25!;
     const slopePerHour = dashboard.trends?.slope_per_hour ?? 0;
     const slopePerMs = slopePerHour / (60 * 60 * 1000);
 
     const chartData = filtered.map((d) => {
       const trendVal = lastVal + slopePerMs * (d.ts - latestTs);
       return {
-        time: new Date(d.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        time: new Date(d.ts).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
         Actual: d.pm25,
         Trend: Math.max(0, Number(trendVal.toFixed(1))),
       };
@@ -60,7 +74,11 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
     const futureTs = latestTs + 60 * 60 * 1000; // +1 hour
     const futureTrendVal = lastVal + slopePerHour;
     chartData.push({
-      time: new Date(futureTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " (Pred)",
+      time:
+        new Date(futureTs).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }) + " (Pred)",
       Actual: undefined,
       Trend: Math.max(0, Number(futureTrendVal.toFixed(1))),
     });
@@ -96,39 +114,61 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
             </div>
             <span className="font-medium text-gray-900">
               {numberOrDash(
-                dashboard.comparison?.local_rank_percentile ?? dashboard.comparison?.percentile_clean,
-                "%"
+                dashboard.comparison?.local_rank_percentile ??
+                  dashboard.comparison?.percentile_clean,
+                "%",
               )}
             </span>
           </div>
         </div>
         <div className="mt-5 bg-gray-50 border-2 border-gray-900/20 text-gray-700 text-sm p-3.5 rounded-lg leading-relaxed">
-          <span className="font-semibold block mb-1 text-gray-900">Analysis:</span>
+          <span className="font-semibold block mb-1 text-gray-900">
+            Analysis:
+          </span>
           {dashboard.comparison?.summary ?? "No summary available"}
         </div>
-        
+
         <div className="mt-auto pt-4 border-t border-gray-100">
           <button
             onClick={() => setShowCitiesList(!showCitiesList)}
             className="flex items-center justify-between w-full text-sm text-gray-500 hover:text-gray-900 font-medium transition-colors"
           >
-            <span className="flex items-center gap-1.5"><Activity className="w-4 h-4" /> View sample cities</span>
-            {showCitiesList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            <span className="flex items-center gap-1.5">
+              <Activity className="w-4 h-4" /> View sample cities
+            </span>
+            {showCitiesList ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
           </button>
-          
+
           {showCitiesList && (
             <div className="mt-3 max-h-48 overflow-y-auto bg-gray-50 border-2 border-gray-900/20 rounded-lg p-2 animate-in slide-in-from-top-2 fade-in duration-200 custom-scrollbar">
-              {dashboard.global_samples && dashboard.global_samples.length > 0 ? (
+              {dashboard.global_samples &&
+              dashboard.global_samples.length > 0 ? (
                 <ul className="space-y-1">
                   {dashboard.global_samples.map((sample, idx) => (
-                    <li key={idx} className="flex justify-between items-center p-2 hover:bg-gray-100 rounded-md text-sm transition-colors">
-                      <span className="text-gray-700 truncate mr-2" title={sample.city}>{sample.city}</span>
-                      <span className="font-semibold text-gray-900 shrink-0">AQI: {sample.aqi}</span>
+                    <li
+                      key={idx}
+                      className="flex justify-between items-center p-2 hover:bg-gray-100 rounded-md text-sm transition-colors"
+                    >
+                      <span
+                        className="text-gray-700 truncate mr-2"
+                        title={sample.city}
+                      >
+                        {sample.city}
+                      </span>
+                      <span className="font-semibold text-gray-900 shrink-0">
+                        AQI: {sample.aqi}
+                      </span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <div className="p-3 text-center text-sm text-gray-500">No sample cities available.</div>
+                <div className="p-3 text-center text-sm text-gray-500">
+                  No sample cities available.
+                </div>
               )}
             </div>
           )}
@@ -152,8 +192,9 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
             <span className="font-medium text-gray-500">Prediction (1h):</span>
             <span className="font-semibold text-lg text-gray-900">
               {numberOrDash(
-                dashboard.trends?.predicted_pm2_5_1h ?? dashboard.trends?.predicted_pm25_1h,
-                " µg/m³"
+                dashboard.trends?.predicted_pm2_5_1h ??
+                  dashboard.trends?.predicted_pm25_1h,
+                " µg/m³",
               )}
             </span>
           </div>
@@ -161,7 +202,12 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
 
         {trendChartData.length > 0 && (
           <div className="h-32 w-full mt-4 -ml-4">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+              minWidth={0}
+              minHeight={0}
+            >
               <LineChart data={trendChartData}>
                 <XAxis dataKey="time" hide />
                 <YAxis domain={["auto", "auto"]} hide />
@@ -175,7 +221,14 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
                   }}
                   itemStyle={{ color: "#111827", fontWeight: 500 }}
                   labelStyle={{ display: "none" }}
-                  formatter={(value: number | string | ReadonlyArray<number | string> | undefined, name: number | string | undefined) => [`${value ?? 0} µg/m³`, String(name ?? "")]}
+                  formatter={(
+                    value:
+                      | number
+                      | string
+                      | ReadonlyArray<number | string>
+                      | undefined,
+                    name: number | string | undefined,
+                  ) => [`${value ?? 0} µg/m³`, String(name ?? "")]}
                 />
                 <Line
                   type="monotone"
@@ -204,18 +257,26 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
             onClick={() => setShowTrendInfo(!showTrendInfo)}
             className="flex items-center justify-between w-full text-sm text-gray-500 hover:text-gray-900 font-medium transition-colors"
           >
-            <span className="flex items-center gap-1.5"><Activity className="w-4 h-4" /> View details</span>
-            {showTrendInfo ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            <span className="flex items-center gap-1.5">
+              <Activity className="w-4 h-4" /> View details
+            </span>
+            {showTrendInfo ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
           </button>
-          
+
           {showTrendInfo && (
             <div className="mt-3 bg-gray-50 border-2 border-gray-900/20 text-gray-700 text-sm p-3.5 rounded-lg leading-relaxed animate-in slide-in-from-top-2 fade-in duration-200">
-              <span className="font-semibold block mb-1 text-gray-900">Analysis:</span>
+              <span className="font-semibold block mb-1 text-gray-900">
+                Analysis:
+              </span>
               {dashboard.trends?.trend?.toLowerCase() === "worsening"
                 ? "PM2.5 levels have been consistently rising over the past 6 hours, leading to a higher predicted value."
                 : dashboard.trends?.trend?.toLowerCase() === "improving"
-                ? "PM2.5 levels have been decreasing over the past 6 hours, indicating better air quality ahead."
-                : "PM2.5 levels have remained relatively stable over the past 6 hours, so no major changes are expected."}
+                  ? "PM2.5 levels have been decreasing over the past 6 hours, indicating better air quality ahead."
+                  : "PM2.5 levels have remained relatively stable over the past 6 hours, so no major changes are expected."}
             </div>
           )}
           <p className="text-xs text-gray-400 mt-3 text-right">
@@ -243,18 +304,26 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
             onClick={() => setShowAwarenessInfo(!showAwarenessInfo)}
             className="flex items-center justify-between w-full text-sm text-gray-500 hover:text-gray-900 font-medium transition-colors"
           >
-            <span className="flex items-center gap-1.5"><Activity className="w-4 h-4" /> View details</span>
-            {showAwarenessInfo ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            <span className="flex items-center gap-1.5">
+              <Activity className="w-4 h-4" /> View details
+            </span>
+            {showAwarenessInfo ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
           </button>
-          
+
           {showAwarenessInfo && (
             <div className="mt-3 bg-gray-50 border-2 border-gray-900/20 text-gray-700 text-sm p-3.5 rounded-lg leading-relaxed animate-in slide-in-from-top-2 fade-in duration-200">
-              <span className="font-semibold block mb-1 text-gray-900">Analysis:</span>
+              <span className="font-semibold block mb-1 text-gray-900">
+                Analysis:
+              </span>
               {dashboard.awareness?.level?.toLowerCase() === "critical"
                 ? "Your local air quality is significantly worse than the global baseline, requiring immediate attention."
                 : dashboard.awareness?.level?.toLowerCase() === "elevated"
-                ? "Your local air quality is worse than average compared to global cities."
-                : "Your local air quality is within a normal range compared to global cities."}
+                  ? "Your local air quality is worse than average compared to global cities."
+                  : "Your local air quality is within a normal range compared to global cities."}
             </div>
           )}
         </div>
@@ -276,7 +345,7 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
               >
                 <span
                   className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider whitespace-nowrap border ${severityColorClass(
-                    item.severity
+                    item.severity,
                   )}`}
                 >
                   {item.severity ?? "unknown"}
