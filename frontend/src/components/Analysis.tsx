@@ -32,20 +32,19 @@ interface AnalysisProps {
 }
 
 /** Forecast horizon in hours (linear extrapolation from latest PM2.5 using slope). */
-type ForecastHorizon = 1 | 24 | 72;
+type ForecastHorizon = 1 | 2 | 3 | 4 | 5 | 6;
+
+const FORECAST_HORIZONS: ForecastHorizon[] = [1, 2, 3, 4, 5, 6];
 
 function predictedPm25ForHorizon(
   trends: DashboardResponse["trends"],
   horizon: ForecastHorizon,
 ): number | null {
   if (!trends) return null;
-  const fromApi =
-    horizon === 1
-      ? (trends.predicted_pm2_5_1h ?? trends.predicted_pm25_1h)
-      : horizon === 24
-        ? trends.predicted_pm25_24h
-        : trends.predicted_pm25_72h;
-  if (fromApi != null && Number.isFinite(fromApi)) return fromApi;
+  if (horizon === 1) {
+    const fromApi = trends.predicted_pm2_5_1h ?? trends.predicted_pm25_1h;
+    if (fromApi != null && Number.isFinite(fromApi)) return fromApi;
+  }
   const cur = trends.current_pm25;
   const slope = trends.slope_per_hour;
   if (cur != null && slope != null && Number.isFinite(cur) && Number.isFinite(slope)) {
@@ -103,9 +102,8 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
       };
     });
 
-    const nSteps = forecastHorizon === 1 ? 1 : forecastHorizon === 24 ? 4 : 6;
-    for (let i = 1; i <= nSteps; i++) {
-      const hoursAhead = (forecastHorizon * i) / nSteps;
+    for (let i = 1; i <= forecastHorizon; i++) {
+      const hoursAhead = i;
       const futureTs = latestTs + hoursAhead * 60 * 60 * 1000;
       const futureTrendVal = lastVal + slopePerHour * hoursAhead;
       const date = new Date(futureTs);
@@ -114,19 +112,12 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
         minute: "2-digit",
       });
       const timeLabel =
-        forecastHorizon === 1
-          ? `${timeShort} +1h`
-          : date.toLocaleString([], {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            });
+        i === forecastHorizon ? `${timeShort} +${forecastHorizon}h` : timeShort;
       chartData.push({
         time: timeLabel,
         fullTime: `${date.toLocaleString()} — linear forecast (+${hoursAhead}h from last reading)`,
         isForecast: true,
-        isForecastEnd: i === nSteps,
+        isForecastEnd: i === forecastHorizon,
         Actual: undefined,
         Trend: Math.max(0, Number(futureTrendVal.toFixed(1))),
       });
@@ -140,8 +131,7 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
     [dashboard.trends, forecastHorizon],
   );
 
-  const predLabel =
-    forecastHorizon === 1 ? "Pred. +1h" : forecastHorizon === 24 ? "Pred. +1 day" : "Pred. +3 days";
+  const predLabel = forecastHorizon === 1 ? "Pred. +1h" : `Pred. +${forecastHorizon}h`;
 
   const trendLabel = (dashboard.trends?.trend ?? "-").toLowerCase();
   const trendBadgeClass =
@@ -251,27 +241,21 @@ export function Analysis({ dashboard, history }: AnalysisProps) {
       <article className="bg-white border-2 border-gray-900/20 rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.2)] hover:-translate-y-1 transition-all duration-300 flex flex-col lg:min-h-[520px]">
         <h3 className="text-lg font-semibold text-gray-900 border-b border-gray-100 pb-4 mb-4 flex items-center">
           Trend Analysis
-          <InfoTooltip text="Blue: measured PM2.5 (last ~6h). Red dashed: same linear slope as the backend, extended by your choice (+1h, +1 day, +3 days). Long horizons are extrapolations only—not a weather forecast." />
+          <InfoTooltip text="Blue: measured PM2.5 (last ~6h). Red dashed: same linear slope as the backend, extended 1–6 hours ahead. These values are simple extrapolations—not a weather or dispersion forecast." />
         </h3>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {(
-            [
-              { h: 1 as const, label: "+1 hour" },
-              { h: 24 as const, label: "+1 day" },
-              { h: 72 as const, label: "+3 days" },
-            ] as const
-          ).map(({ h, label }) => (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {FORECAST_HORIZONS.map((h) => (
             <button
               key={h}
               type="button"
               onClick={() => setForecastHorizon(h)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors ${
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors min-w-12 ${
                 forecastHorizon === h
                   ? "border-gray-900 bg-gray-900 text-white"
                   : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
               }`}
             >
-              {label}
+              +{h}h
             </button>
           ))}
         </div>

@@ -15,7 +15,7 @@ IoT air-quality stack: **KidBright32** sensors → **MQTT** → **FastAPI** + **
 
 ## Overview
 
-The backend stores sensor readings, merges **WAQI** and **weather** snapshots, runs **AQI**, **linear-regression trends** (6h window, optional longer extrapolation in the UI), **alerts**, and an **awareness score**. The frontend polls the bundled **`/api/v1/dashboard`** endpoint.
+The backend stores sensor readings, merges **WAQI** and **weather** snapshots, runs **AQI**, **linear-regression trends** (6h window; the UI can extrapolate **+1h–+6h** from that slope), **alerts**, and an **awareness score**. The frontend polls the bundled **`/api/v1/dashboard`** endpoint.
 
 ---
 
@@ -23,8 +23,16 @@ The backend stores sensor readings, merges **WAQI** and **weather** snapshots, r
 
 - **Ingestion:** PM1.0 / PM2.5 / PM10, temperature, humidity, CO over MQTT.
 - **Comparison:** Local vs city and sampled global cities (WAQI).
-- **Analytics:** EPA-style local AQI, trend + optional horizons (+1h / +1d / +3d in UI), rule-based alerts.
+- **Analytics:** EPA-style local AQI, PM2.5 trend (+1h–+6h in UI), rule-based alerts, awareness score.
 - **UI:** Next.js, Tailwind, Recharts; auto-refresh, historical charts with collapsible stats, tooltips, stale-sensor hint.
+
+### Analysis (what it means)
+
+- **Local AQI** — Converts your latest **PM2.5** into an **EPA-style** index and category so “how bad is it here?” is one number with a health band.
+- **Comparison** — Pulls **city** AQI (WAQI) plus a **sample of global cities**, then shows **local vs city vs global average** and a **percentile** (“how many sampled cities are worse than you?”). The short **summary** text is generated from those numbers.
+- **Trend** — Fits a **line to PM2.5 over the last ~6 hours**, labels it **improving / stable / worsening**, and draws a **straight-line forecast** for the next **1–6 hours** (not weather science—just “if the recent slope continued”).
+- **Awareness score** — A **0–100** score that mixes **how severe** local AQI is with **how you rank** against the global sample, surfaced as a level (e.g. normal / elevated / critical).
+- **Alerts** — Rule-based flags: e.g. **high PM2.5 or CO**, **local much worse than city or global baseline**, and **rapid PM2.5 rise** when the worsening trend is steep enough.
 
 ---
 
@@ -137,7 +145,7 @@ If there are fewer than **two** valid PM2.5 points in the window, the API return
 
 **Predictions (extrapolation only)**
 
-The **latest PM2.5** in the window is treated as the intercept for a simple forward line: **predicted = max(0, last_pm25 + slope × hours_ahead)**. The dashboard exposes horizons such as **+1 h**, **+24 h**, and **+72 h**; these are **not** weather or dispersion models—only the same linear slope extended in time. The UI notes that long horizons are extrapolations.
+The **latest PM2.5** in the window is treated as the intercept for a simple forward line: **predicted = max(0, last_pm25 + slope × hours_ahead)**. The dashboard lets you pick **+1 h** through **+6 h**; these are **not** weather or dispersion models—only the same linear slope extended in time. The UI notes that they are extrapolations.
 
 **API**
 
