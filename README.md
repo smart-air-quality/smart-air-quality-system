@@ -2,14 +2,19 @@
 
 IoT air-quality stack: **KidBright32** sensors → **MQTT** → **FastAPI** + **MySQL** → external **WAQI / weather** APIs → **Next.js** dashboard (live data, comparisons, trends, alerts).
 
+**Repository:** [github.com/smart-air-quality/smart-air-quality-system](https://github.com/smart-air-quality/smart-air-quality-system) · **License:** [MIT](LICENSE)
+
 ---
 
 ## Team
 
-| Name                 | Student ID | Affiliation                                                                      |
-| -------------------- | ---------- | -------------------------------------------------------------------------------- |
-| Thapanan Suwansukhum | 6710545555 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
-| Bhumipat Kusalatham  | 6710545831 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
+**Slides (Group 19, DAQ):** [Group19_Slides_DAQ.pdf](Group19_Slides_DAQ.pdf) — presentation PDF in the repository root.
+
+| Photo | Name | Student ID | Affiliation |
+| ----- | ---- | ---------- | ----------- |
+| [t1.jpg](data/photos/t1.jpg) | Thapanan Suwansukhum | 6710545555 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
+| [c1.jpg](data/photos/c1.jpg) | Bhumipat Kusalatham | 6710545831 | Department of Computer Engineering, Faculty of Engineering, Kasetsart University |
+
 
 ---
 
@@ -38,6 +43,7 @@ The backend stores sensor readings, merges **WAQI** and **weather** snapshots, r
 
 ## Requirements
 
+
 | Tool               | Notes                                                       |
 | ------------------ | ----------------------------------------------------------- |
 | **Python**         | **3.11** in Docker; **3.10+** for local venv.               |
@@ -45,6 +51,7 @@ The backend stores sensor readings, merges **WAQI** and **weather** snapshots, r
 | **npm**            | 10+ (with Node 20).                                         |
 | **Docker Compose** | v3.8 file in repo root.                                     |
 | **MySQL**          | **8.x** (e.g. KU `iot.cpe.ku.ac.th` or any reachable host). |
+
 
 - **Backend deps:** [`backend/requirements.txt`](backend/requirements.txt) (FastAPI, Uvicorn, SQLAlchemy, PyMySQL, Paho-MQTT, Alembic, HTTPX, Pydantic v2, …).
 - **Frontend deps:** [`frontend/package.json`](frontend/package.json) (Next 16.2.x, React 19.x, Tailwind 4.x, Recharts 3.x, TypeScript 5.x).
@@ -59,30 +66,22 @@ Use **Docker** (Option A) or **local** Python + Node (Option B). Create an empty
 ### Option A: Docker
 
 1. **Clone & env**
-
-   ```bash
+  ```bash
    git clone https://github.com/smart-air-quality/smart-air-quality-system.git
    cd smart-air-quality-system
    cp .env.example .env          # macOS / Linux
    copy .env.example .env       # Windows CMD
-   ```
-
+  ```
    Edit `.env`: set `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` (and host if not default).
-
 2. **Run**
-
-   ```bash
+  ```bash
    docker-compose up -d --build
-   ```
-
+  ```
 3. **Tables** — On startup the backend calls SQLAlchemy **`create_all()`**, which usually creates tables on an **empty** schema. **Recommended:** run migrations so the DB matches `alembic/versions/`:
-
-   ```bash
+  ```bash
    docker-compose exec backend alembic upgrade head
-   ```
-
+  ```
 4. **(Optional) Demo SQL** — Import [`data/export/collected_data.sql`](data/export/collected_data.sql) via [phpMyAdmin](https://iot.cpe.ku.ac.th/pma/) (Import → choose file → Go). See [`data/export/README.md`](data/export/README.md) if present.
-
 5. **URLs** — App [http://localhost:3000](http://localhost:3000) · Swagger [http://localhost:8000/docs](http://localhost:8000/docs)
 
 **Stop:** `docker-compose down` (add `-v` only if you intend to remove named volumes you added yourself).
@@ -113,12 +112,14 @@ More: [`backend/README.md`](backend/README.md), [`frontend/README.md`](frontend/
 
 ## Hardware
 
+
 | Part            | Role                   | Bus               |
 | --------------- | ---------------------- | ----------------- |
 | **KidBright32** | MCU (ESP32-class)      | WiFi / I²C / UART |
 | **PMS7003**     | PM1 / PM2.5 / PM10     | UART              |
 | **KY-015**      | Temperature & humidity | Digital           |
 | **MQ-9**        | CO (and related gases) | Analog            |
+
 
 ---
 
@@ -135,11 +136,13 @@ The backend fits a **straight line** to **local PM2.5** only (not other pollutan
 
 Classification is by comparing the fitted slope to configurable thresholds (defaults in `backend/app/core/config.py`: **`trend_slope_worsening` = +1.5**, **`trend_slope_improving` = −1.5**):
 
-| Slope (µg/m³ per h) | Label       | Meaning (rough)                          |
-| ------------------- | ----------- | ---------------------------------------- |
-| **> +1.5**          | Worsening   | PM2.5 rising faster than the “stable” band |
-| **< −1.5**          | Improving   | PM2.5 falling faster than the stable band |
-| **in between**      | Stable      | Change within the dead band              |
+
+| Slope (µg/m³ per h) | Label     | Meaning (rough)                            |
+| ------------------- | --------- | ------------------------------------------ |
+| **> +1.5**          | Worsening | PM2.5 rising faster than the “stable” band |
+| **< −1.5**          | Improving | PM2.5 falling faster than the stable band  |
+| **in between**      | Stable    | Change within the dead band                |
+
 
 If there are fewer than **two** valid PM2.5 points in the window, the API returns **`trend: "unknown"`** and omits useful predictions.
 
@@ -199,6 +202,8 @@ erDiagram
     sensor_readings ||--|| external_readings : "Compared by Time (recorded_at)"
 ```
 
+
+
 ---
 
 ## Architecture
@@ -228,6 +233,8 @@ graph LR
     Calc == REST ==> UI
 ```
 
+
+
 ---
 
 ## Tech stack
@@ -236,3 +243,4 @@ graph LR
 - **Backend:** Python, FastAPI, SQLAlchemy, PyMySQL, Paho-MQTT, Alembic
 - **Frontend:** React, Next.js, Tailwind CSS, Recharts
 - **Ops:** Docker Compose, MySQL 8
+
